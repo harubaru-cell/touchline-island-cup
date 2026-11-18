@@ -258,6 +258,18 @@ function drawAthlete(m,p,now,passTarget=false){
     m.line(x-dx*.34-dz*.27,z-dz*.34+dx*.27,x,z,.085,cue,.052);
     m.line(x-dx*.34+dz*.27,z-dz*.34-dx*.27,x,z,.085,cue,.052);
   }
+  if(tackle&&p.team===1&&tackle.age<SWEEP_END){
+    const color=tackle.contact?"#fff0a4":"#e8bc60";
+    m.at(p.x,0,p.z,angle,()=>{
+      for(const side of [-1,1]){
+        for(let i=0;i<4;i++){
+          const a=.73+i*.18,b=a+.18;
+          m.line(side*SWEEP_HALF_WIDTH*Math.sin(a),SWEEP_REACH*Math.cos(a),
+            side*SWEEP_HALF_WIDTH*Math.sin(b),SWEEP_REACH*Math.cos(b),.055,color,.052);
+        }
+      }
+    });
+  }
   m.at(p.x,bob-.085*plant-.14*poised-.10*poke,p.z,angle,()=>{
     for(const s of [-1,1]){
       const z=s*(step*(1-plant)*(1-.65*poised)*(1-poke)-plant*.6),k=s===1?Math.sin(kick*Math.PI)*.67+reach*.82:0;
@@ -611,6 +623,7 @@ const gap=(p,q)=>Math.hypot(p.x-q.x,p.z-q.z);
 function turnAngle(a,b,t){return a+Math.atan2(Math.sin(b-a),Math.cos(b-a))*Math.min(1,t);}
 const JOG_SPEED=4.2,SPRINT_SECONDS=2,RECOVERY_SECONDS=5.4;
 const TACKLE_SET=.29,TACKLE_CONTACT=.36,TACKLE_END=TACKLE_CONTACT+.40;
+const SWEEP_END=TACKLE_CONTACT+.12,SWEEP_HALF_WIDTH=1.12,SWEEP_REACH=1.38;
 const PRESS_HOLD=.20,POKE_WINDOW=.22,POKE_ANIMATION=.36;
 const positions=[[[0,-3.8],[-11,-5],[11,-2],[-1,-14.5],[0,-28]],[[2.5,4.8],[11,10],[-11,8.5],[0,18],[.15,28]]];
 class Match{
@@ -757,16 +770,27 @@ class Match{
   challenge(p,owner){
     if(p.team===owner.team||owner.cool>0||p.cool>0)return false;
     const b=this.ball,dx=b.x-p.x,dz=b.z-p.z,d=Math.hypot(dx,dz);
-    const reach=p.keeper?1.38:p.tackle?.82:1.04;
-    if(d>reach||b.y>1)return false;
-    // A carrier can shield the ball. Tackles need access to the ball-side foot.
-    const side=(p.x-owner.x)*(b.x-owner.x)+(p.z-owner.z)*(b.z-owner.z);
-    if(side<-.08&&d>.48)return false;
-    if(p.id===0&&p.poke){
-      const yaw=p.poke.yaw;
-      if(dx*Math.sin(yaw)+dz*Math.cos(yaw)<-.06||Math.abs(dx*Math.cos(yaw)-dz*Math.sin(yaw))>.48)return false;
-      this.turf={x:b.x,z:b.z,age:0};
-    }else if(!p.keeper&&d>.48&&(dx*Math.sin(p.facing)+dz*Math.cos(p.facing))<.12*d)return false;
+    if(b.y>1)return false;
+    if(p.tackle&&p.team===1){
+      // The foot sweeps a rounded area in front of the planted defender.
+      const t=p.tackle,forward=dx*t.dx+dz*t.dz,lateral=dx*t.dz-dz*t.dx;
+      const length=forward<0?.52:SWEEP_REACH;
+      if((forward/length)**2+(lateral/SWEEP_HALF_WIDTH)**2>1)return false;
+      // A turn only shields the ball once the carrier is physically between
+      // it and the defender. Moving the ball across the body is still risky.
+      const ox=owner.x-p.x,oz=owner.z-p.z,along=ox*dx+oz*dz;
+      if(along>0&&along<d*d&&Math.abs(ox*dz-oz*dx)<.27*d)return false;
+    }else{
+      const reach=p.keeper?1.38:p.tackle?.82:1.04;
+      if(d>reach)return false;
+      const side=(p.x-owner.x)*(b.x-owner.x)+(p.z-owner.z)*(b.z-owner.z);
+      if(side<-.08&&d>.48)return false;
+      if(p.id===0&&p.poke){
+        const yaw=p.poke.yaw;
+        if(dx*Math.sin(yaw)+dz*Math.cos(yaw)<-.06||Math.abs(dx*Math.cos(yaw)-dz*Math.sin(yaw))>.48)return false;
+        this.turf={x:b.x,z:b.z,age:0};
+      }else if(!p.keeper&&d>.48&&(dx*Math.sin(p.facing)+dz*Math.cos(p.facing))<.12*d)return false;
+    }
     this.claim(p);owner.cool=.85;p.cool=.43;this.attach();
     if(p.id===0){this.pressUntil=0;this.notify("ボール奪取",.65);}
     return true;
@@ -793,7 +817,8 @@ class Match{
   }
   advanceTackle(p,dt){
     const t=p.tackle;
-    t.contact=t.age<TACKLE_CONTACT&&t.age+dt>=TACKLE_CONTACT;
+    const contactEnd=p.team===1?SWEEP_END:TACKLE_CONTACT;
+    t.contact=t.age<contactEnd&&t.age+dt>=TACKLE_CONTACT;
     t.age+=dt;this.pace(p,false,dt);
     const speed=t.age<TACKLE_SET?.35:t.age<=TACKLE_CONTACT+.001?4.9:.38;
     this.move(p,t.dx,t.dz,speed,dt,Math.atan2(t.dx,t.dz));
@@ -984,7 +1009,7 @@ class Match{
     if(!modal.hidden)return;lastModalFocus=document.activeElement;modeBefore=match.mode;dialog=kind;if(match.mode==="play")match.mode="pause";resetInput();
     if(document.pointerLockElement===world)document.exitPointerLock();
     const title=$("modal-title"),body=$("modal-body"),action=$("modal-action");modal.hidden=false;notice.textContent="";
-    if(kind==="help"){title.textContent="操作ガイド";body.innerHTML='<p><b>1–2–1の布陣</b><br>背番号10のあなたはFW。7番は左MF、8番は右MF、4番は後方のDF、1番はGKです。</p><p>水色のリングはパス先の味方。味方に預けたら、DFの背後へ斜めに走ろう。先に届くコースが開くと、味方がスルーパスを出します。</p><p>1対1ではDFの足元の黄色い矢印が踏み込みの合図。横や斜めに切り返し、空いた側へダッシュしよう。</p><ul class="guide-list"><li><strong>方向転換</strong><span>マウスを左右に動かして選手と視点を旋回</span></li><li><strong>移動</strong><span>視点に対して W＝前、A＝左、S＝後ろ、D＝右。矢印キー・左スティックでも移動</span></li><li><strong>パス・プレス</strong><span>左クリック / J / パスボタン。味方が持つとパス要求。守備は短く押して離すと水色の軌跡を描いてタックル。約0.2秒長押ししながら中央を塞ぐと、近くの味方がパスコースを狙います。水色の弧がその合図です。</span></li><li><strong>シュート</strong><span>右クリック / K・Space / シュートボタン。押して力をため、離して蹴る。マウス操作では正面へシュート</span></li><li><strong>ダッシュ</strong><span>Shiftを押しながら移動 /「走る」で切替。満タンから2秒。終了から0.3秒後に回復開始。使い切った場合は5.7秒で満タン</span></li><li><strong>ポーズ</strong><span>Escでマウス操作を解除して一時停止 / 一時停止ボタン</span></li></ul>';action.textContent=modeBefore==="play"?"試合に戻る":"閉じる";}
+    if(kind==="help"){title.textContent="操作ガイド";body.innerHTML='<p><b>1–2–1の布陣</b><br>背番号10のあなたはFW。7番は左MF、8番は右MF、4番は後方のDF、1番はGKです。</p><p>水色のリングはパス先の味方。味方に預けたら、DFの背後へ斜めに走ろう。先に届くコースが開くと、味方がスルーパスを出します。</p><p>DFの足元の黄色い矢印が踏み込みの合図。左右の短い線は足が届く幅の目安です。外側のコースを取り続けるか、斜めにダッシュして抜けよう。</p><ul class="guide-list"><li><strong>方向転換</strong><span>マウスを左右に動かして選手と視点を旋回</span></li><li><strong>移動</strong><span>視点に対して W＝前、A＝左、S＝後ろ、D＝右。矢印キー・左スティックでも移動</span></li><li><strong>パス・プレス</strong><span>左クリック / J / パスボタン。味方が持つとパス要求。守備は短く押して離すと水色の軌跡を描いてタックル。約0.2秒長押ししながら中央を塞ぐと、近くの味方がパスコースを狙います。水色の弧がその合図です。</span></li><li><strong>シュート</strong><span>右クリック / K・Space / シュートボタン。押して力をため、離して蹴る。マウス操作では正面へシュート</span></li><li><strong>ダッシュ</strong><span>Shiftを押しながら移動 /「走る」で切替。満タンから2秒。終了から0.3秒後に回復開始。使い切った場合は5.7秒で満タン</span></li><li><strong>ポーズ</strong><span>Escでマウス操作を解除して一時停止 / 一時停止ボタン</span></li></ul>';action.textContent=modeBefore==="play"?"試合に戻る":"閉じる";}
     else if(kind==="pause"){title.textContent="TIME OUT";body.innerHTML="<p>試合を一時停止しています。</p>";action.textContent="▶　試合を再開";}
     else{title.textContent="FULL TIME";const [a,b]=match.score,s=match.stats;body.innerHTML='<p>'+ (a>b?"COAST FC の勝利！":a<b?"SOL FC の勝利":"引き分け")+'</p><div class="result-score">CST　'+a+' – '+b+'　SOL</div><div class="stats"><div><b>'+s.goals+'</b><span>個人ゴール</span></div><div><b>'+s.assists+'</b><span>アシスト</span></div><div><b>'+s.shots+'</b><span>シュート</span></div><div><b>'+s.passes+'</b><span>成功パス</span></div></div>';action.textContent="▶　もう一度プレイ";}
     dirty=true;action.focus({preventScroll:true});}
