@@ -20,6 +20,8 @@
 @media(max-width:600px){.bar-inner,main{width:calc(100% - 22px)}.bar-inner{height:53px}.brand{font-size:24px;gap:7px}.brand-mark{width:28px;height:28px}.brand-mark svg{width:25px}.nav-actions{gap:9px}.nav-button{font-size:10px;gap:4px}.nav-actions .divider{height:13px}.nav-button svg{width:16px}.match-head{padding:16px 0 13px}.title-row{gap:8px}h1{font-size:34px}.format{font-size:8px;padding:2px 4px}.match-meta{font-size:9px;gap:7px;margin-top:5px}.match-meta svg{width:12px;height:12px}.primary{padding:0 12px;font-size:11px;min-height:36px;gap:4px}.primary svg{width:14px}.arena{height:clamp(355px,calc(100svh - 211px),650px);border-radius:9px}.scoreboard{transform:scale(.8);transform-origin:top left}.view-tools{gap:4px}.state-chip{font-size:8px;padding:0 5px}.hud-button{width:25px}.hud-button,.state-chip{height:24px}.controls-title b{font-size:10px;letter-spacing:.6px}.controls-title{gap:4px}.controls-title svg{width:15px}.controls{padding:8px 10px;gap:8px}.touch-legend{font-size:9px}.modal-card{padding:18px}.modal-card h2{font-size:29px}}
 @media(max-height:550px) and (orientation:landscape){.bar-inner{height:39px}.brand{font-size:22px}.brand-mark{width:25px;height:25px}.brand-mark svg{width:22px}.match-head{padding:5px 0}.match-head h1{font-size:25px}.match-meta{display:none}.match-head .primary{min-height:28px;font-size:11px}.arena{height:calc(100svh - 92px);min-height:215px}.controls{display:none}.modal-card{padding:13px 20px}.modal-stripe{margin-bottom:5px}.modal-card h2{font-size:25px}.guide-list{gap:4px;margin:5px 0}.modal-card p{margin:5px 0}.modal-card .primary{min-height:30px}.arena.playing .player-hud{bottom:11px;left:135px}.arena.playing #radar{right:160px;bottom:12px}.scoreboard{transform:scale(.8);transform-origin:top left}}
 .brand,.primary,h1,.nav-button,.format{white-space:nowrap}.match-head>.primary{flex-shrink:0}
+.scoreboard,.player-hud,#radar,#announcement,.power,.state-chip{pointer-events:none}
+.modal-card{max-height:100%;overflow-y:auto;overscroll-behavior:contain}
 @media(max-width:435px){.nav-actions{gap:8px}.nav-actions #sound span{display:none}.state-chip{display:none}.scoreboard{transform:scale(.76)}.arena .player-hud{transform:scale(.72)}#radar{width:86px;height:49px}.modal-card{max-height:100%;overflow-y:auto;overscroll-behavior:contain}.modal-card .primary{min-height:36px}.arena.playing #radar{width:76px;height:44px}}
 @media(max-width:360px){.format{display:none}.match-head h1{font-size:29px}.match-head .primary{padding-inline:9px}.controls-title b{display:none}.scoreboard{transform:scale(.69)}.view-tools{gap:3px}}
 
@@ -62,7 +64,7 @@
     <div class="touch-ui"><div id="stick" class="stick" aria-label="移動スティック"><i></i></div><div class="touch-actions"><button id="run" aria-pressed="false">走る</button><button id="pass">パス</button><button id="shoot">シュート</button></div></div>
     <div class="modal-back" id="modal" hidden><div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button id="dismiss" class="close" aria-label="閉じる"><svg><use href="#i-close"/></svg></button><div class="modal-stripe"></div><h2 id="modal-title"></h2><div id="modal-body"></div><button class="primary" id="modal-action"></button></div></div>
   </section>
-  <section class="controls" aria-label="操作方法"><div class="controls-title"><svg><use href="#i-pad"/></svg><b>CONTROLS</b></div><div class="bindings"><div><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>移動</div><div><kbd>Shift</kbd>ダッシュ</div><div><kbd>J</kbd>パス / プレス</div><div><kbd>K</kbd>シュート</div><div><kbd>Esc</kbd>ポーズ</div></div><div class="touch-legend">左スティックで移動 · シュート長押しで強く蹴る</div></section>
+  <section class="controls" aria-label="操作方法"><div class="controls-title"><svg><use href="#i-pad"/></svg><b>CONTROLS</b></div><div class="bindings"><div><kbd>マウス ↔</kbd>方向転換</div><div><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>移動</div><div><kbd>左クリック</kbd>パス / プレス</div><div><kbd>右クリック</kbd>シュート</div><div><kbd>Shift</kbd>ダッシュ</div><div><kbd>Esc</kbd>ポーズ</div></div><div class="touch-legend">左スティックで移動 · シュート長押しで強く蹴る</div></section>
 </main>
 <script>
 "use strict";
@@ -301,7 +303,16 @@ class Match{
     b.owner=p.id;b.last=p.id;b.kind="dribble";b.vx=b.vz=b.vy=b.y=0;p.hold=0;if(p.id!==0)this.charge=null;}
   attach(){let b=this.ball;if(b.owner===null)return;const p=this.players[b.owner],side=p.id===0?.385:.23,forward=.47+.065*Math.sin(p.phase);
     b.x=p.x+Math.sin(p.facing)*forward+Math.cos(p.facing)*side;b.z=p.z+Math.cos(p.facing)*forward-Math.sin(p.facing)*side;b.y=Math.abs(Math.sin(p.phase))*.025;}
-  move(p,x,z,speed,dt){let len=Math.hypot(x,z);if(len>.001){x/=len;z/=len;p.x=clamp(p.x+x*speed*dt,-SIDE+.17,SIDE-.17);p.z=clamp(p.z+z*speed*dt,-END+.19,END-.19);p.facing=turnAngle(p.facing,Math.atan2(x,z),dt*10);p.speed=speed;p.phase+=dt*(speed*2.42); }else p.speed*=Math.exp(-dt*12);}
+  move(p,x,z,speed,dt,facing){
+    const len=Math.hypot(x,z);
+    if(len>.001){
+      p.x=clamp(p.x+x/len*speed*dt,-SIDE+.17,SIDE-.17);
+      p.z=clamp(p.z+z/len*speed*dt,-END+.19,END-.19);
+      if(facing===undefined)p.facing=turnAngle(p.facing,Math.atan2(x,z),dt*10);
+      p.speed=speed;p.phase+=dt*speed*2.42;
+    }else p.speed*=Math.exp(-dt*12);
+    if(facing!==undefined)p.facing=facing;
+  }
   to(p,x,z,speed,dt){const dx=x-p.x,dz=z-p.z,d=Math.hypot(dx,dz);this.move(p,d>.16?dx:0,d>.16?dz:0,Math.min(speed,d*5),dt);}
   kick(p,x,z,speed,loft,kind){const b=this.ball,dx=x-b.x,dz=z-b.z,n=Math.hypot(dx,dz)||1;
     Object.assign(b,{owner:null,last:p.id,vx:dx/n*speed,vz:dz/n*speed,vy:loft,y:.07,lock:.10,kind});p.cool=kind==="shot"?.46:.37;p.kick=1;p.facing=Math.atan2(dx,dz);this.pendingPass=kind==="pass"&&p.id===0;}
@@ -316,9 +327,16 @@ class Match{
     if(this.pressLock>0)return;this.pressLock=.72;const target=b.owner===null?b:this.players[b.owner];const d=gap(h,target);if(d<2.25&&b.y<1.6){if(b.owner!==null)this.players[b.owner].cool=.9;this.claim(h);h.cool=.35;this.notify("ボール奪取",.75);}
     else if(d<5){const dx=(target.x-h.x)/(d||1),dz=(target.z-h.z)/(d||1);h.x=clamp(h.x+dx*.7,-SIDE+.2,SIDE-.2);h.z=clamp(h.z+dz*.7,-END+.2,END-.2);h.facing=Math.atan2(dx,dz);}}
   startShot(){if(this.mode==="play"&&this.freeze<=0&&this.ball.owner===0&&this.charge===null)this.charge=0;}
-  releaseShot(){if(this.charge===null)return;const power=this.charge;this.charge=null;if(this.mode!=="play"||this.ball.owner!==0)return;
-    const h=this.hero,gk=this.players[9],dx=Math.sin(h.facing),aim=clamp((Math.abs(dx)>.21?dx*2.8:(h.x>.3?-1:h.x<-.3?1:gk.x>=0?-1:1)*(1.65+.8*power)),-3.28,3.28);
-    this.kick(h,aim,END+.16,14+power*13,2.3+power*2.7,"shot");this.stats.shots++;}
+  releaseShot(aimYaw){if(this.charge===null)return;const power=this.charge;this.charge=null;if(this.mode!=="play"||this.ball.owner!==0)return;
+    const h=this.hero,gk=this.players[9],dx=Math.sin(h.facing);
+    let x,z;
+    if(aimYaw!==undefined){
+      x=this.ball.x+Math.sin(aimYaw)*30;z=this.ball.z+Math.cos(aimYaw)*30;
+    }else{
+      x=clamp((Math.abs(dx)>.21?dx*2.8:(h.x>.3?-1:h.x<-.3?1:gk.x>=0?-1:1)*(1.65+.8*power)),-3.28,3.28);
+      z=END+.16;
+    }
+    this.kick(h,x,z,14+power*13,2.3+power*2.7,"shot");this.stats.shots++;}
   ai(p,dt){const b=this.ball,dir=p.team===0?1:-1,owner=b.owner===null?null:this.players[b.owner],own=owner&&owner.team===p.team;
     if(b.owner===p.id){p.hold+=dt;const distGoal=END-p.z*dir,threat=Math.min(...this.players.filter(q=>q.team!==p.team).map(q=>gap(q,p)));
       if(p.keeper){if(p.hold>.68)this.pass(p);return;}
@@ -345,7 +363,7 @@ class Match{
     this.time=Math.max(0,this.time-dt);if(!this.time){this.mode="end";this.charge=null;return;}this.tick+=dt;this.pressLock=Math.max(0,this.pressLock-dt);
     const h=this.hero,b=this.ball;for(const p of this.players){p.cool=Math.max(0,p.cool-dt);p.kick=Math.max(0,p.kick-dt*2.95);}
     const moving=Math.hypot(input.x,input.z)>.03,sprint=moving&&input.run&&!this.sprintLocked;this.stamina=clamp(this.stamina+dt*(sprint?-.16:.115),0,1);if(this.stamina===0)this.sprintLocked=true;else if(this.stamina>.24)this.sprintLocked=false;
-    this.move(h,moving?input.x:0,moving?input.z:0,(sprint?7.35:4.9)*(this.charge!==null?.73:1)*Math.min(1,Math.hypot(input.x,input.z)),dt);
+    this.move(h,moving?input.x:0,moving?input.z:0,(sprint?7.35:4.9)*(this.charge!==null?.73:1)*Math.min(1,Math.hypot(input.x,input.z)),dt,input.facing);
     if(this.charge!==null)this.charge=Math.min(1,this.charge+dt/1.05);
     for(const p of this.players.slice(1))this.ai(p,dt);
     // Resolve light body contact without letting stationary players stack up.
@@ -368,7 +386,10 @@ class Match{
 (()=>{
   const $=id=>document.getElementById(id),world=$("world"),arena=$("arena"),renderer=new Renderer(world),stadium=buildStadium(!renderer.gl),actors=new Mesh(Boolean(renderer.gl));
   const notice=$("announcement"),modal=$("modal"),keys=new Set(),joystick={x:0,z:0,id:null},cam={x:0,y:2.55,z:-11.15,a:0,t:.135};
-  let age=0,noticeEnd=0,match=new Match(announce),last=0,acc=0,modeBefore="",dialog="",runToggle=false,moving=false,moveBase=0,raf=0,dirty=true,cachedMode="",lastModalFocus=null,shotPointer=null;
+  let age=0,noticeEnd=0,match=new Match(announce),last=0,acc=0,modeBefore="",dialog="",runToggle=false,raf=0,dirty=true,cachedMode="",lastModalFocus=null;
+  const follow={x:0,z:0};
+  let touchCamera=matchMedia("(pointer:coarse)").matches,stickBasis=0,shotSource=null;
+  let hadMouseLock=false,edgeTurn=0,justUnlockedAt=-Infinity;
   let soundOn=true,context=null;try{soundOn=localStorage.getItem("touchline-sound")!=="off";}catch{}
   function tone(freq,duration,type="sine",volume=.055,delay=0,end=freq){if(!soundOn||!context||context.state!=="running")return;
     const osc=context.createOscillator(),gain=context.createGain(),start=context.currentTime+delay;osc.type=type;osc.frequency.setValueAtTime(freq,start);osc.frequency.exponentialRampToValueAtTime(Math.max(15,end),start+duration);gain.gain.setValueAtTime(.0001,start);gain.gain.exponentialRampToValueAtTime(volume,start+.012);gain.gain.exponentialRampToValueAtTime(.0001,start+duration);osc.connect(gain);gain.connect(context.destination);osc.start(start);osc.stop(start+duration+.02);}
@@ -376,45 +397,115 @@ class Match{
   function announce(msg,sec=1,style=""){notice.textContent=msg;notice.className=style;noticeEnd=age+sec;if(style==="goal"){[392,494,587,784].forEach((v,i)=>tone(v,.22,"triangle",.08,i*.085));}}
   function soundUI(){const b=$("sound");b.setAttribute("aria-pressed",String(soundOn));b.querySelector("use").setAttribute("href",soundOn?"#i-sound":"#i-mute");b.title=soundOn?"サウンドをオフ":"サウンドをオン";}
   $("sound").onclick=()=>{soundOn=!soundOn;try{localStorage.setItem("touchline-sound",soundOn?"on":"off");}catch{}audioReady();soundUI();if(soundOn)tone(523,.12);};soundUI();
-  function resetInput(){keys.clear();joystick.x=joystick.z=0;joystick.id=null;$("stick").firstElementChild.style.transform="";match.charge=null;moving=false;runToggle=false;shotPointer=null;$("run").setAttribute("aria-pressed","false");}
+  function resetInput(){keys.clear();joystick.x=joystick.z=0;joystick.id=null;$("stick").firstElementChild.style.transform="";match.charge=null;shotSource=null;edgeTurn=0;runToggle=false;$("run").setAttribute("aria-pressed","false");}
   function focusPitch(){try{world.focus({preventScroll:true});}catch{world.focus();}}
-  function kickOff(){audioReady();if(match.mode==="end"){match=new Match(announce);snapCam();}match.mode="play";dirty=true;focusPitch();tone(1380,.11,"sine",.05,0,1720);tone(1550,.16,"sine",.04,.13,1470);announce("キックオフ",1);}
+  function lockMouse(){
+    if(document.pointerLockElement===world||!world.requestPointerLock)return;
+    // Hover and edge turning also work in browsers that cannot lock the pointer.
+    try{world.requestPointerLock()?.catch(()=>{});}catch{}
+  }
+  function enterPitch(e){
+    focusPitch();
+    if(e?.pointerType==="mouse"||(!e?.pointerType&&e?.detail>0&&matchMedia("(pointer:fine)").matches)){
+      touchCamera=false;lockMouse();
+    }else if(e?.pointerType==="touch")touchCamera=true;
+  }
+  function kickOff(e){audioReady();if(match.mode==="end"){match=new Match(announce);snapCam();}match.mode="play";dirty=true;enterPitch(e);tone(1380,.11,"sine",.05,0,1720);tone(1550,.16,"sine",.04,.13,1470);announce("キックオフ",1);}
   function showDialog(kind){
     if(!modal.hidden)return;lastModalFocus=document.activeElement;modeBefore=match.mode;dialog=kind;if(match.mode==="play")match.mode="pause";resetInput();
+    if(document.pointerLockElement===world)document.exitPointerLock();
     const title=$("modal-title"),body=$("modal-body"),action=$("modal-action");modal.hidden=false;notice.textContent="";
-    if(kind==="help"){title.textContent="操作ガイド";body.innerHTML='<p>背番号10のアオイを操作して、3分間で相手より多くのゴールを決めよう。</p><ul class="guide-list"><li><strong>移動</strong><span>WASD・矢印キー / 左スティック</span></li><li><strong>ダッシュ</strong><span>Shiftを押しながら移動 /「走る」で切替</span></li><li><strong>パス</strong><span>J / パスボタン。味方が持つとパス要求</span></li><li><strong>プレス</strong><span>相手に近づいて J / プレスボタン</span></li><li><strong>シュート</strong><span>K・Space / シュートボタン。長押しで強く、離してキック</span></li><li><strong>ポーズ</strong><span>Esc / 一時停止ボタン</span></li></ul>';action.textContent=modeBefore==="play"?"試合に戻る":"閉じる";}
+    if(kind==="help"){title.textContent="操作ガイド";body.innerHTML='<p>背番号10のアオイを操作して、3分間で相手より多くのゴールを決めよう。</p><ul class="guide-list"><li><strong>方向転換</strong><span>マウスを左右に動かして選手と視点を旋回</span></li><li><strong>移動</strong><span>視点に対して W＝前、A＝左、S＝後ろ、D＝右。矢印キー・左スティックでも移動</span></li><li><strong>パス・プレス</strong><span>左クリック / J / パスボタン。味方が持つとパス要求、相手が持つとプレス</span></li><li><strong>シュート</strong><span>右クリック / K・Space / シュートボタン。押して力をため、離して蹴る。マウス操作では正面へシュート</span></li><li><strong>ダッシュ</strong><span>Shiftを押しながら移動 /「走る」で切替</span></li><li><strong>ポーズ</strong><span>Escでマウス操作を解除して一時停止 / 一時停止ボタン</span></li></ul>';action.textContent=modeBefore==="play"?"試合に戻る":"閉じる";}
     else if(kind==="pause"){title.textContent="TIME OUT";body.innerHTML="<p>試合を一時停止しています。</p>";action.textContent="▶　試合を再開";}
     else{title.textContent="FULL TIME";const [a,b]=match.score,s=match.stats;body.innerHTML='<p>'+ (a>b?"COAST FC の勝利！":a<b?"SOL FC の勝利":"引き分け")+'</p><div class="result-score">CST　'+a+' – '+b+'　SOL</div><div class="stats"><div><b>'+s.goals+'</b><span>個人ゴール</span></div><div><b>'+s.shots+'</b><span>シュート</span></div><div><b>'+s.passes+'</b><span>成功パス</span></div></div>';action.textContent="▶　もう一度プレイ";}
     dirty=true;action.focus({preventScroll:true});}
-  function hideDialog(resume=true){if(modal.hidden)return;const was=dialog;modal.hidden=true;dialog="";if(match.mode==="pause")match.mode=modeBefore==="play"&&resume?"play":modeBefore;dirty=true;if(was==="end"&&resume){kickOff();}else if(match.mode==="play"){focusPitch();}else if(lastModalFocus?.isConnected){lastModalFocus.focus({preventScroll:true});}}
-  $("modal-action").onclick=()=>hideDialog();$("dismiss").onclick=()=>hideDialog(dialog!=="end");modal.addEventListener("click",e=>{if(e.target===modal)hideDialog(dialog!=="end");});
-  $("guide").onclick=()=>showDialog("help");function mainAction(){if(!modal.hidden){hideDialog();return;}if(match.mode==="ready"||match.mode==="end")kickOff();else showDialog("pause");}
+  function hideDialog(resume=true,e){if(modal.hidden)return;const was=dialog;modal.hidden=true;dialog="";if(match.mode==="pause")match.mode=modeBefore==="play"&&resume?"play":modeBefore;dirty=true;if(was==="end"&&resume){kickOff(e);}else if(match.mode==="play"){enterPitch(e);}else if(lastModalFocus?.isConnected){lastModalFocus.focus({preventScroll:true});}}
+  $("modal-action").onclick=e=>hideDialog(true,e);$("dismiss").onclick=e=>hideDialog(dialog!=="end",e);modal.addEventListener("click",e=>{if(e.target===modal)hideDialog(dialog!=="end",e);});
+  $("guide").onclick=()=>showDialog("help");function mainAction(e){if(!modal.hidden){hideDialog(true,e);return;}if(match.mode==="ready"||match.mode==="end")kickOff(e);else showDialog("pause");}
   $("primary").onclick=mainAction;$("field-pause").onclick=mainAction;
   function wideUI(){const full=Boolean(document.fullscreenElement)||arena.classList.contains("expanded");$("expand").setAttribute("aria-label",full?"拡大表示を終了":"ゲーム画面を拡大");dirty=true;}
   $("expand").onclick=async()=>{if(document.fullscreenElement){await document.exitFullscreen();}else if(arena.classList.contains("expanded")){arena.classList.remove("expanded");document.body.classList.remove("has-expanded");}else{let engaged=false;try{if(arena.requestFullscreen){await arena.requestFullscreen();engaged=true;}}catch{}if(!engaged){arena.classList.add("expanded");document.body.classList.add("has-expanded");}}wideUI();};
   document.addEventListener("fullscreenchange",wideUI);
   const motionKeys=["KeyW","KeyA","KeyS","KeyD","ArrowUp","ArrowDown","ArrowLeft","ArrowRight","ShiftLeft","ShiftRight","KeyJ","KeyK","Space"];
-  function pass(){const own=match.ball.owner===0;match.actionPass();if(match.mode==="play"&&own)tone(125,.085,"triangle",.13,0,42);}
-  function shoot(){const charged=match.charge!==null;match.releaseShot();if(charged)tone(135,.14,"triangle",.22,0,34);}
+  function faceView(){
+    match.hero.facing=cam.a;
+    if(match.ball.owner===0)match.attach();
+  }
+  function turnView(delta){
+    if(!delta||match.mode!=="play"||match.freeze>0)return;
+    touchCamera=false;
+    cam.a=Math.atan2(Math.sin(cam.a+delta),Math.cos(cam.a+delta));
+    faceView();
+  }
+  function pass(){if(match.mode!=="play"||match.freeze>0)return;if(!touchCamera)faceView();const own=match.ball.owner===0;match.actionPass();if(own)tone(125,.085,"triangle",.13,0,42);}
+  function startShot(source){
+    if(match.charge!==null)return;
+    match.startShot();if(match.charge!==null)shotSource=source;
+  }
+  function finishShot(source){
+    if(shotSource!==source)return;shotSource=null;
+    if(match.charge===null||match.mode!=="play")return;
+    if(!touchCamera)faceView();
+    match.releaseShot(touchCamera?undefined:cam.a);tone(135,.14,"triangle",.22,0,34);
+  }
+  function cancelShot(source){if(shotSource===source){shotSource=null;match.charge=null;}}
+  document.addEventListener("pointerlockchange",()=>{
+    const locked=document.pointerLockElement===world;
+    const lost=hadMouseLock&&!locked;hadMouseLock=locked;edgeTurn=0;
+    if(locked&&match.mode!=="play"){document.exitPointerLock();return;}
+    if(lost){justUnlockedAt=performance.now();if(match.mode==="play")showDialog("pause");}
+  });
+  world.addEventListener("pointerdown",e=>{
+    if(e.pointerType!=="mouse"){e.preventDefault();return;}
+    if(e.button===2&&!document.pointerLockElement&&match.mode==="play")world.setPointerCapture(e.pointerId);
+  });
+  world.addEventListener("pointercancel",()=>cancelShot("mouse"));
+  world.addEventListener("mouseleave",()=>{edgeTurn=0;});
+  document.addEventListener("mousemove",e=>{
+    const locked=document.pointerLockElement===world;
+    if(match.mode!=="play"||(!locked&&e.target!==world)||e.sourceCapabilities?.firesTouchEvents)return;
+    turnView(e.movementX*.0038);
+    if(!locked){
+      const bounds=world.getBoundingClientRect(),position=(e.clientX-bounds.left)/bounds.width;
+      edgeTurn=clamp((position-.94)/.06,0,1)-clamp((.06-position)/.06,0,1);
+    }
+  });
+  world.addEventListener("mousedown",e=>{
+    if(match.mode!=="play"||e.sourceCapabilities?.firesTouchEvents||(e.button!==0&&e.button!==2))return;
+    e.preventDefault();touchCamera=false;focusPitch();
+    if(e.button===0){lockMouse();pass();}else startShot("mouse");
+  });
+  window.addEventListener("mouseup",e=>{if(e.button===2)finishShot("mouse");});
   window.addEventListener("keydown",e=>{
-    if(!modal.hidden){if(e.code==="Escape"){e.preventDefault();if(!e.repeat)hideDialog(dialog!=="end");}if(e.key==="Tab"){const a=$("modal-action"),d=$("dismiss");if(e.shiftKey&&document.activeElement===d){e.preventDefault();a.focus();}else if(!e.shiftKey&&document.activeElement===a){e.preventDefault();d.focus();}}return;}
+    if(!modal.hidden){if(e.code==="Escape"){e.preventDefault();if(!e.repeat&&performance.now()-justUnlockedAt>250)hideDialog(dialog!=="end");}if(e.key==="Tab"){const a=$("modal-action"),d=$("dismiss");if(e.shiftKey&&document.activeElement===d){e.preventDefault();a.focus();}else if(!e.shiftKey&&document.activeElement===a){e.preventDefault();d.focus();}}return;}
     if(e.code==="Escape"&&match.mode==="play"){e.preventDefault();if(!e.repeat)showDialog("pause");return;}if(match.mode!=="play"||!motionKeys.includes(e.code))return;
-    e.preventDefault();if(e.repeat)return;keys.add(e.code);if(e.code==="KeyJ")pass();if(e.code==="KeyK"||e.code==="Space")match.startShot();});
-  window.addEventListener("keyup",e=>{keys.delete(e.code);if((e.code==="KeyK"||e.code==="Space")&&match.mode==="play"){e.preventDefault();shoot();}});
+    e.preventDefault();if(e.repeat)return;keys.add(e.code);touchCamera=false;if(e.code==="KeyJ")pass();if(e.code==="KeyK"||e.code==="Space")startShot(e.code);});
+  window.addEventListener("keyup",e=>{keys.delete(e.code);if((e.code==="KeyK"||e.code==="Space")&&match.mode==="play"){e.preventDefault();finishShot(e.code);}});
   function suspend(){if(match.mode==="play")showDialog("pause");else resetInput();}window.addEventListener("blur",suspend);document.addEventListener("visibilitychange",()=>{if(document.hidden)suspend();last=0;});
   const stick=$("stick");function updateStick(e){let r=stick.getBoundingClientRect(),x=(e.clientX-r.left-r.width/2)/(r.width*.36),y=(e.clientY-r.top-r.height/2)/(r.height*.36),d=Math.max(1,Math.hypot(x,y));joystick.x=x/d;joystick.z=-y/d;stick.firstElementChild.style.transform="translate("+joystick.x*r.width*.27+"px,"+(-joystick.z*r.width*.27)+"px)";}
-  stick.onpointerdown=e=>{if(joystick.id!==null)return;e.preventDefault();joystick.id=e.pointerId;stick.setPointerCapture(e.pointerId);updateStick(e);};stick.onpointermove=e=>{if(joystick.id===e.pointerId)updateStick(e);};stick.onlostpointercapture=()=>{joystick.id=null;joystick.x=joystick.z=0;stick.firstElementChild.style.transform="";};
-  $("run").onclick=()=>{runToggle=!runToggle;$("run").setAttribute("aria-pressed",String(runToggle));};$("pass").onpointerdown=e=>{e.preventDefault();pass();};
-  $("shoot").onpointerdown=e=>{if(shotPointer!==null)return;e.preventDefault();shotPointer=e.pointerId;e.target.setPointerCapture(e.pointerId);match.startShot();};
-  $("shoot").onpointerup=e=>{if(shotPointer===e.pointerId){shoot();shotPointer=null;}};$("shoot").onpointercancel=()=>{match.charge=null;shotPointer=null;};
+  stick.onpointerdown=e=>{if(joystick.id!==null)return;e.preventDefault();touchCamera=true;edgeTurn=0;stickBasis=cam.a;joystick.id=e.pointerId;stick.setPointerCapture(e.pointerId);updateStick(e);};stick.onpointermove=e=>{if(joystick.id===e.pointerId)updateStick(e);};stick.onlostpointercapture=()=>{joystick.id=null;joystick.x=joystick.z=0;stick.firstElementChild.style.transform="";};
+  $("run").onclick=()=>{runToggle=!runToggle;$("run").setAttribute("aria-pressed",String(runToggle));};$("pass").onpointerdown=e=>{e.preventDefault();touchCamera=true;edgeTurn=0;pass();};
+  $("shoot").onpointerdown=e=>{e.preventDefault();touchCamera=true;edgeTurn=0;e.currentTarget.setPointerCapture(e.pointerId);startShot(e.pointerId);};
+  $("shoot").onpointerup=e=>finishShot(e.pointerId);$("shoot").onlostpointercapture=e=>cancelShot(e.pointerId);
   arena.addEventListener("contextmenu",e=>e.preventDefault());window.addEventListener("resize",()=>{dirty=true;});
-  function input(){let x=joystick.x+Number(keys.has("KeyD")||keys.has("ArrowRight"))-Number(keys.has("KeyA")||keys.has("ArrowLeft")),z=joystick.z+Number(keys.has("KeyW")||keys.has("ArrowUp"))-Number(keys.has("KeyS")||keys.has("ArrowDown"));
-    const n=Math.max(1,Math.hypot(x,z));x/=n;z/=n;const active=Math.hypot(x,z)>.04;if(active&&!moving)moveBase=cam.a;moving=active;
-    return {x:x*Math.cos(moveBase)+z*Math.sin(moveBase),z:z*Math.cos(moveBase)-x*Math.sin(moveBase),run:runToggle||keys.has("ShiftLeft")||keys.has("ShiftRight")};}
-  function camera(dt){const p=match.hero;cam.a=turnAngle(cam.a,p.facing,1-Math.exp(-dt*2.7));const bx=-Math.sin(cam.a),bz=-Math.cos(cam.a);
-    let dist=5.65;if(Math.abs(bx)>.001)dist=Math.min(dist,(Math.sign(bx)*(SIDE+1.55)-p.x)/bx);if(Math.abs(bz)>.001)dist=Math.min(dist,(Math.sign(bz)*(END+2.3)-p.z)/bz);
-    const k=1-Math.exp(-dt*8);cam.x=mix(cam.x,p.x+bx*dist,k);cam.z=mix(cam.z,p.z+bz*dist,k);cam.t=mix(cam.t,.135+(5.65-dist)*.078,k);}
-  function snapCam(){const p=match.hero;cam.a=p.facing;cam.x=p.x-Math.sin(cam.a)*5.65;cam.z=p.z-Math.cos(cam.a)*5.65;}snapCam();
+  function input(){
+    const right=Number(keys.has("KeyD")||keys.has("ArrowRight"))-Number(keys.has("KeyA")||keys.has("ArrowLeft"));
+    const forward=Number(keys.has("KeyW")||keys.has("ArrowUp"))-Number(keys.has("KeyS")||keys.has("ArrowDown"));
+    const sin=Math.sin(cam.a),cos=Math.cos(cam.a);
+    const x=right*cos+forward*sin+joystick.x*Math.cos(stickBasis)+joystick.z*Math.sin(stickBasis);
+    const z=forward*cos-right*sin+joystick.z*Math.cos(stickBasis)-joystick.x*Math.sin(stickBasis);
+    const scale=Math.max(1,Math.hypot(x,z));
+    return {x:x/scale,z:z/scale,facing:touchCamera?undefined:cam.a,run:runToggle||keys.has("ShiftLeft")||keys.has("ShiftRight")};
+  }
+  function camera(dt){
+    const p=match.hero,k=1-Math.exp(-dt*8);
+    if(touchCamera)cam.a=turnAngle(cam.a,p.facing,1-Math.exp(-dt*2.7));
+    follow.x=mix(follow.x,p.x,k);follow.z=mix(follow.z,p.z,k);
+    const bx=-Math.sin(cam.a),bz=-Math.cos(cam.a);
+    let dist=5.65;if(Math.abs(bx)>.001)dist=Math.min(dist,(Math.sign(bx)*(SIDE+1.55)-follow.x)/bx);if(Math.abs(bz)>.001)dist=Math.min(dist,(Math.sign(bz)*(END+2.3)-follow.z)/bz);
+    cam.x=follow.x+bx*dist;cam.z=follow.z+bz*dist;cam.t=mix(cam.t,.135+(5.65-dist)*.078,k);
+  }
+  function snapCam(){const p=match.hero;follow.x=p.x;follow.z=p.z;cam.a=p.facing;stickBasis=cam.a;cam.x=p.x-Math.sin(cam.a)*5.65;cam.z=p.z-Math.cos(cam.a)*5.65;}snapCam();
   const radar=$("radar"),pen=radar.getContext("2d");function drawRadar(){const w=radar.width,h=radar.height,b=match.ball,px=z=>13+(z+END)/(2*END)*(w-26),py=x=>11+(x+SIDE)/(2*SIDE)*(h-22);
     pen.clearRect(0,0,w,h);pen.strokeStyle="#dce9d48a";pen.lineWidth=1.6;pen.strokeRect(13,11,w-26,h-22);pen.beginPath();pen.moveTo(w/2,11);pen.lineTo(w/2,h-11);pen.stroke();pen.beginPath();pen.ellipse(w/2,h/2,19.2,17.5,0,0,TAU);pen.stroke();
     for(const dir of [-1,1]){const gx=dir===1?w-13:13;pen.strokeRect(gx,py(-9.4),-dir*33,py(9.4)-py(-9.4));}
@@ -428,7 +519,7 @@ class Match{
   function draw(){actors.data.length=0;for(const p of match.players)drawAthlete(actors,p,age);drawBall(actors,match.ball);renderer.render(cam,stadium,actors);drawRadar();hud();}
   let prevFrame=-1,wasFrozen=false;
   function frame(ms){raf=requestAnimationFrame(frame);if(document.hidden)return;const dt=last?Math.min((ms-last)/1000,.09):0;last=ms;age+=dt;
-    if(match.mode==="play"){acc+=dt;while(acc>=1/60){const before=match.freeze>0;match.step(1/60,input());if(before&&match.freeze<=0){snapCam();moving=false;}camera(1/60);acc-=1/60;}if(match.mode==="end")showDialog("end");}
+    if(match.mode==="play"){acc+=dt;while(acc>=1/60){const before=match.freeze>0;if(edgeTurn&&!touchCamera)turnView(edgeTurn*2.5/60);match.step(1/60,input());if(before&&match.freeze<=0)snapCam();camera(1/60);acc-=1/60;}if(match.mode==="end")showDialog("end");}
     else acc=0;const active=match.mode==="play",target=renderer.gl?(active?1/60:1/20):(active?1/24:1/6);
     if(dirty||prevFrame<0||age-prevFrame>=target-.001){if(active||match.mode==="ready"||dirty||!wasFrozen)draw();dirty=false;prevFrame=age;wasFrozen=match.mode==="pause"||match.mode==="end";}}
   world.addEventListener("webglcontextlost",e=>{e.preventDefault();cancelAnimationFrame(raf);suspend();announce("描画を復旧しています",4);});world.addEventListener("webglcontextrestored",()=>location.reload());
