@@ -622,6 +622,7 @@ function planPlay(match){
 const gap=(p,q)=>Math.hypot(p.x-q.x,p.z-q.z);
 function turnAngle(a,b,t){return a+Math.atan2(Math.sin(b-a),Math.cos(b-a))*Math.min(1,t);}
 const JOG_SPEED=4.2,SPRINT_SECONDS=2,RECOVERY_SECONDS=5.4;
+const KEEPER_REACTION=.15,KEEPER_LATERAL_ACCEL=14;
 const TACKLE_SET=.29,TACKLE_CONTACT=.36,TACKLE_END=TACKLE_CONTACT+.40;
 const SWEEP_END=TACKLE_CONTACT+.12,SWEEP_HALF_WIDTH=1.40,SWEEP_REACH=1.65;
 const PRESS_HOLD=.20,POKE_WINDOW=.22,POKE_ANIMATION=.36;
@@ -686,7 +687,14 @@ class Match{
   to(p,x,z,burst,dt){
     const dx=x-p.x,dz=z-p.z,d=Math.hypot(dx,dz),pace=this.pace(p,burst&&d>.85,dt);
     const speed=d>.1?Math.min(pace,d*6):0;
-    if(!p.keeper&&this.players[this.ball.owner??this.ball.last].team!==p.team){
+    if(p.keeper){
+      const step=KEEPER_LATERAL_ACCEL*dt;
+      const vx=p.vx+clamp(dx/(d||1)*speed-p.vx,-step,step);
+      const remainingSpeed=Math.sqrt(Math.max(0,pace*pace-vx*vx));
+      const vz=clamp(dz/(d||1)*speed,-remainingSpeed,remainingSpeed);
+      this.move(p,vx,vz,Math.hypot(vx,vz),dt);return;
+    }
+    if(this.players[this.ball.owner??this.ball.last].team!==p.team){
       // A marker following a check towards the ball needs to brake before
       // chasing the same runner back towards goal.
       const changeX=dx/(d||1)*speed-p.vx,changeZ=dz/(d||1)*speed-p.vz;
@@ -897,15 +905,21 @@ class Match{
     if(b.owner===p.id){this.onBall(p,dir,dt);return;}
     if(p.keeper){
       const homeZ=-dir*(END-1.3),opposing=this.players[b.owner??b.last].team!==p.team;
+      const incoming=b.owner===null&&b.kind==="shot"&&b.vz*dir<0;
+      // Keep following the pre-shot positioning target until the keeper can react.
+      if(incoming&&b.flight+1e-8<KEEPER_REACTION){
+        this.to(p,p.tx,p.tz,p.burst,dt);return;
+      }
       const rush=opposing&&gap(p,b)<4.8;
       let x=clamp(b.x*.28,-GOAL+.35,GOAL-.35),z=homeZ;
       if(rush){x=b.x;z=clamp(b.z,homeZ-2.8,homeZ+2.8);}
-      if(b.owner===null&&b.kind==="shot"&&b.vz*dir<-1){
+      if(incoming){
         const t=clamp((homeZ-b.z)/b.vz,0,.36);
         x=clamp(b.x+b.vx*t,-GOAL+.2,GOAL-.2);z=homeZ;
       }
       if(b.receiver===p.id){x=b.meetX;z=b.meetZ;}
-      this.to(p,x,z,rush||b.kind==="shot",dt);
+      p.tx=x;p.tz=z;p.burst=rush||incoming;
+      this.to(p,x,z,p.burst,dt);
       p.facing=turnAngle(p.facing,Math.atan2(b.x-p.x,b.z-p.z),dt*8);return;
     }
     if(p.tackle||(b.owner!==null&&this.startTackle(p,this.players[b.owner]))){
@@ -1009,7 +1023,7 @@ class Match{
     if(!modal.hidden)return;lastModalFocus=document.activeElement;modeBefore=match.mode;dialog=kind;if(match.mode==="play")match.mode="pause";resetInput();
     if(document.pointerLockElement===world)document.exitPointerLock();
     const title=$("modal-title"),body=$("modal-body"),action=$("modal-action");modal.hidden=false;notice.textContent="";
-    if(kind==="help"){title.textContent="操作ガイド";body.innerHTML='<p><b>1–2–1の布陣</b><br>背番号10のあなたはFW。7番は左MF、8番は右MF、4番は後方のDF、1番はGKです。</p><p>水色のリングはパス先の味方。味方に預けたら、DFの背後へ斜めに走ろう。先に届くコースが開くと、味方がスルーパスを出します。</p><p>DFの足元の黄色い矢印が踏み込みの合図。左右の短い線は足が届く幅の目安です。外側のコースを取り続けるか、斜めにダッシュして抜けよう。</p><ul class="guide-list"><li><strong>方向転換</strong><span>マウスを左右に動かして選手と視点を旋回</span></li><li><strong>移動</strong><span>視点に対して W＝前、A＝左、S＝後ろ、D＝右。矢印キー・左スティックでも移動</span></li><li><strong>パス・プレス</strong><span>左クリック / J / パスボタン。味方が持つとパス要求。守備は短く押して離すと水色の軌跡を描いてタックル。約0.2秒長押ししながら中央を塞ぐと、近くの味方がパスコースを狙います。水色の弧がその合図です。</span></li><li><strong>シュート</strong><span>右クリック / K・Space / シュートボタン。押して力をため、離して蹴る。マウス操作では正面へシュート</span></li><li><strong>ダッシュ</strong><span>Shiftを押しながら移動 /「走る」で切替。満タンから2秒。終了から0.3秒後に回復開始。使い切った場合は5.7秒で満タン</span></li><li><strong>ポーズ</strong><span>Escでマウス操作を解除して一時停止 / 一時停止ボタン</span></li></ul>';action.textContent=modeBefore==="play"?"試合に戻る":"閉じる";}
+    if(kind==="help"){title.textContent="操作ガイド";body.innerHTML='<p><b>1–2–1の布陣</b><br>背番号10のあなたはFW。7番は左MF、8番は右MF、4番は後方のDF、1番はGKです。</p><p>水色のリングはパス先の味方。味方に預けたら、DFの背後へ斜めに走ろう。先に届くコースが開くと、味方がスルーパスを出します。</p><p>DFの足元の黄色い矢印が踏み込みの合図。左右の短い線は足が届く幅の目安です。外側のコースを取り続けるか、斜めにダッシュして抜けよう。</p><ul class="guide-list"><li><strong>方向転換</strong><span>マウスを左右に動かして選手と視点を旋回</span></li><li><strong>移動</strong><span>視点に対して W＝前、A＝左、S＝後ろ、D＝右。矢印キー・左スティックでも移動</span></li><li><strong>パス・プレス</strong><span>左クリック / J / パスボタン。味方が持つとパス要求。守備は短く押して離すと水色の軌跡を描いてタックル。約0.2秒長押ししながら中央を塞ぐと、近くの味方がパスコースを狙います。水色の弧がその合図です。</span></li><li><strong>シュート</strong><span>右クリック / K・Space / シュートボタン。押して力をため、離して蹴る。右クリックでためている間はマウス感度が60%になります。ゴールの上の▼が狙っている横位置です。水色は枠内、オレンジは枠外です。</span></li><li><strong>ダッシュ</strong><span>Shiftを押しながら移動 /「走る」で切替。満タンから2秒。終了から0.3秒後に回復開始。使い切った場合は5.7秒で満タン</span></li><li><strong>ポーズ</strong><span>Escでマウス操作を解除して一時停止 / 一時停止ボタン</span></li></ul>';action.textContent=modeBefore==="play"?"試合に戻る":"閉じる";}
     else if(kind==="pause"){title.textContent="TIME OUT";body.innerHTML="<p>試合を一時停止しています。</p>";action.textContent="▶　試合を再開";}
     else{title.textContent="FULL TIME";const [a,b]=match.score,s=match.stats;body.innerHTML='<p>'+ (a>b?"COAST FC の勝利！":a<b?"SOL FC の勝利":"引き分け")+'</p><div class="result-score">CST　'+a+' – '+b+'　SOL</div><div class="stats"><div><b>'+s.goals+'</b><span>個人ゴール</span></div><div><b>'+s.assists+'</b><span>アシスト</span></div><div><b>'+s.shots+'</b><span>シュート</span></div><div><b>'+s.passes+'</b><span>成功パス</span></div></div>';action.textContent="▶　もう一度プレイ";}
     dirty=true;action.focus({preventScroll:true});}
@@ -1029,6 +1043,7 @@ class Match{
   function turnView(delta){
     if(!delta||match.mode!=="play"||match.freeze>0)return;
     touchCamera=false;
+    if(aimingWithMouse())delta*=.6;
     cam.a=Math.atan2(Math.sin(cam.a+delta),Math.cos(cam.a+delta));
     faceView();
   }
@@ -1045,6 +1060,7 @@ class Match{
     match.releaseShot(touchCamera?undefined:cam.a);tone(135,.14,"triangle",.22,0,34);
   }
   function cancelShot(source){if(shotSource===source){shotSource=null;match.charge=null;}}
+  function aimingWithMouse(){return shotSource==="mouse"&&match.charge!==null&&!touchCamera;}
   document.addEventListener("pointerlockchange",()=>{
     const locked=document.pointerLockElement===world;
     const lost=hadMouseLock&&!locked;hadMouseLock=locked;edgeTurn=0;
@@ -1119,12 +1135,26 @@ class Match{
     $("power").style.display=match.charge!==null?"block":"none";if(match.charge!==null)$("power").querySelector("i").style.width=Math.max(5,match.charge*100)+"%";
     $("pass").classList.toggle("containing",match.hero.stance==="contain");
     $("pass").textContent=match.ball.owner===0?"パス":match.ball.owner!==null&&match.players[match.ball.owner].team===0?"要求":match.hero.stance==="contain"?"寄せ中":"プレス";if(age>noticeEnd&&notice.textContent)notice.textContent="";}
+  function drawShotAim(){
+    const forward=Math.cos(cam.a),ball=match.ball;
+    if(forward<=0||ball.z>=END)return;
+    const x=ball.x+(END-ball.z)*Math.sin(cam.a)/forward;
+    if(Math.abs(x)>SIDE)return;
+    const size=clamp(.016*Math.hypot(x-cam.x,END-cam.z),.16,.85);
+    const color=Math.abs(x)<GOAL-.1?"#82ffe0":"#ffad6c";
+    actors.at(x,BAR+.10,END,cam.a,()=>{
+      actors.tri([0,0,0],[-size,size*1.65,0],[size,size*1.65,0],"#143138");
+      actors.tri([0,size*.32,-.025],[-size*.72,size*1.48,-.025],[size*.72,size*1.48,-.025],color);
+    });
+  }
   function draw(){
     actors.data.length=0;
     const target=match.ball.owner===0?match.target(match.hero,true)?.id:match.ball.receiver;
     for(const p of match.players)drawAthlete(actors,p,age,match.mode==="play"&&p.team===0&&p.id!==0&&p.id===target);
     if(match.turf)drawTurf(actors,match.turf);
-    drawBall(actors,match.ball);renderer.render(cam,stadium,actors);drawRadar();hud();
+    drawBall(actors,match.ball);
+    if(match.mode==="play"&&aimingWithMouse())drawShotAim();
+    renderer.render(cam,stadium,actors);drawRadar();hud();
   }
   let prevFrame=-1,wasFrozen=false;
   function frame(ms){raf=requestAnimationFrame(frame);if(document.hidden)return;const dt=last?Math.min((ms-last)/1000,.09):0;last=ms;age+=dt;
