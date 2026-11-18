@@ -267,7 +267,7 @@ function drawAthlete(m,p,now,passTarget=false){
     m.line(x-dx*.34-dz*.27,z-dz*.34+dx*.27,x,z,.085,cue,.052);
     m.line(x-dx*.34+dz*.27,z-dz*.34-dx*.27,x,z,.085,cue,.052);
   }
-  if(tackle&&p.team===1&&tackle.age<SWEEP_END){
+  if(tackle&&tackle.age<SWEEP_END){
     const color=tackle.contact?"#fff0a4":"#e8bc60";
     m.at(p.x,0,p.z,angle,()=>{
       for(const side of [-1,1]){
@@ -691,16 +691,12 @@ function advanceFreeBall(b,dt){
 }
 function fieldTackleReaches(p,owner,ball,aimX,aimZ){
   const dx=ball.x-p.x,dz=ball.z-p.z,d=Math.hypot(dx,dz);
-  if(p.team===1){
-    const forward=dx*aimX+dz*aimZ,lateral=dx*aimZ-dz*aimX;
-    const length=forward<0?.52:SWEEP_REACH;
-    if((forward/length)**2+(lateral/SWEEP_HALF_WIDTH)**2>1)return false;
-    // The carrier shields the ball only when physically between it and the foot.
-    const ox=owner.x-p.x,oz=owner.z-p.z,along=ox*dx+oz*dz;
-    return !(along>0&&along<d*d&&Math.abs(ox*dz-oz*dx)<.27*d);
-  }
-  const side=(p.x-owner.x)*(ball.x-owner.x)+(p.z-owner.z)*(ball.z-owner.z);
-  return d<=.82&&(d<=.48||(side>=-.08&&dx*aimX+dz*aimZ>=.12*d));
+  const forward=dx*aimX+dz*aimZ,lateral=dx*aimZ-dz*aimX;
+  const length=forward<0?.52:SWEEP_REACH;
+  if((forward/length)**2+(lateral/SWEEP_HALF_WIDTH)**2>1)return false;
+  // The carrier shields the ball only when physically between it and the foot.
+  const ox=owner.x-p.x,oz=owner.z-p.z,along=ox*dx+oz*dz;
+  return !(along>0&&along<d*d&&Math.abs(ox*dz-oz*dx)<.27*d);
 }
 class Match{
   constructor(notify){this.notify=notify;this.players=[];this.stats={goals:0,shots:0,passes:0,assists:0};this.score=[0,0];this.time=180;this.mode="ready";this.charge=null;this.freeze=0;this.tick=0;this.restartTeam=0;this.rng=seeded(521);this.pressLock=0;
@@ -925,7 +921,7 @@ class Match{
     if(timed){
       // Compare both players at first contact, after the defender plants and steps.
       const travel=PLANT_SPEED*TACKLE_SET+LUNGE_SPEED*(TACKLE_CONTACT-TACKLE_SET);
-      const defender={team:p.team,x:p.x+tx*travel,z:p.z+tz*travel};
+      const defender={x:p.x+tx*travel,z:p.z+tz*travel};
       const runner={x:owner.x+owner.vx*lead,z:owner.z+owner.vz*lead};
       if(!fieldTackleReaches(defender,runner,{x:p.x+aimX,z:p.z+aimZ},tx,tz))return false;
     }
@@ -934,8 +930,7 @@ class Match{
   }
   advanceTackle(p,dt){
     const t=p.tackle;
-    const contactEnd=p.team===1?SWEEP_END:TACKLE_CONTACT;
-    t.contact=t.age<contactEnd&&t.age+dt>=TACKLE_CONTACT;
+    t.contact=t.age<SWEEP_END&&t.age+dt>=TACKLE_CONTACT;
     t.age+=dt;this.pace(p,false,dt);
     const speed=t.age<TACKLE_SET?PLANT_SPEED:t.age<=TACKLE_CONTACT+.001?LUNGE_SPEED:.38;
     this.move(p,t.dx,t.dz,speed,dt,Math.atan2(t.dx,t.dz));
