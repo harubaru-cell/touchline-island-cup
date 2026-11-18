@@ -625,9 +625,23 @@ const JOG_SPEED=4.2,SPRINT_SECONDS=2,RECOVERY_SECONDS=5.4;
 const SHOT_CHARGE_SECONDS=1.05,SHOT_GRACE_SECONDS=.30;
 const KEEPER_REACTION=.15,KEEPER_LATERAL_ACCEL=20;
 const TACKLE_SET=.29,TACKLE_CONTACT=.36,TACKLE_END=TACKLE_CONTACT+.40;
+const PLANT_SPEED=.35,LUNGE_SPEED=4.9;
 const SWEEP_END=TACKLE_CONTACT+.12,SWEEP_HALF_WIDTH=1.40,SWEEP_REACH=1.65;
 const PRESS_HOLD=.20,POKE_WINDOW=.22,POKE_ANIMATION=.36;
 const positions=[[[0,-3.8],[-11,-5],[11,-2],[-1,-14.5],[0,-28]],[[2.5,4.8],[11,10],[-11,8.5],[0,18],[.15,28]]];
+function fieldTackleReaches(p,owner,ball,aimX,aimZ){
+  const dx=ball.x-p.x,dz=ball.z-p.z,d=Math.hypot(dx,dz);
+  if(p.team===1){
+    const forward=dx*aimX+dz*aimZ,lateral=dx*aimZ-dz*aimX;
+    const length=forward<0?.52:SWEEP_REACH;
+    if((forward/length)**2+(lateral/SWEEP_HALF_WIDTH)**2>1)return false;
+    // The carrier shields the ball only when physically between it and the foot.
+    const ox=owner.x-p.x,oz=owner.z-p.z,along=ox*dx+oz*dz;
+    return !(along>0&&along<d*d&&Math.abs(ox*dz-oz*dx)<.27*d);
+  }
+  const side=(p.x-owner.x)*(ball.x-owner.x)+(p.z-owner.z)*(ball.z-owner.z);
+  return d<=.82&&(d<=.48||(side>=-.08&&dx*aimX+dz*aimZ>=.12*d));
+}
 class Match{
   constructor(notify){this.notify=notify;this.players=[];this.stats={goals:0,shots:0,passes:0,assists:0};this.score=[0,0];this.time=180;this.mode="ready";this.charge=null;this.freeze=0;this.tick=0;this.restartTeam=0;this.rng=seeded(521);this.pressLock=0;
     for(let t=0;t<2;t++)positions[t].forEach(([x,z],i)=>{this.players.push({id:t*5+i,team:t,i,position:POSITIONS[i],keeper:i===4,look:(i+t*3)%5,num:[10,7,8,4,1][i],x,z,phase:i*1.2+t,facing:t?Math.PI:0,speed:0,kick:0,hold:0,cool:0,think:0,tx:x,tz:z});});
@@ -780,17 +794,10 @@ class Match{
     if(p.team===owner.team||owner.cool>0||p.cool>0)return false;
     const b=this.ball,dx=b.x-p.x,dz=b.z-p.z,d=Math.hypot(dx,dz);
     if(b.y>1)return false;
-    if(p.tackle&&p.team===1){
-      // The foot sweeps a rounded area in front of the planted defender.
-      const t=p.tackle,forward=dx*t.dx+dz*t.dz,lateral=dx*t.dz-dz*t.dx;
-      const length=forward<0?.52:SWEEP_REACH;
-      if((forward/length)**2+(lateral/SWEEP_HALF_WIDTH)**2>1)return false;
-      // A turn only shields the ball once the carrier is physically between
-      // it and the defender. Moving the ball across the body is still risky.
-      const ox=owner.x-p.x,oz=owner.z-p.z,along=ox*dx+oz*dz;
-      if(along>0&&along<d*d&&Math.abs(ox*dz-oz*dx)<.27*d)return false;
+    if(p.tackle){
+      if(!fieldTackleReaches(p,owner,b,p.tackle.dx,p.tackle.dz))return false;
     }else{
-      const reach=p.keeper?1.38:p.tackle?.82:1.04;
+      const reach=p.keeper?1.38:1.04;
       if(d>reach)return false;
       const side=(p.x-owner.x)*(b.x-owner.x)+(p.z-owner.z)*(b.z-owner.z);
       if(side<-.08&&d>.48)return false;
@@ -804,24 +811,51 @@ class Match{
     if(p.id===0){this.pressUntil=0;this.notify("ボール奪取",.65);}
     return true;
   }
-  startTackle(p,owner){
+  pursuitShoulder(p,owner){
+    if(p.team===owner.team||(p.role!=="press"&&p.role!=="recover"&&p.role!=="delay"))return null;
+    const speed=Math.hypot(owner.vx,owner.vz);
+    const dx=p.x-owner.x,dz=p.z-owner.z;
+    if(speed<1.2||Math.hypot(dx,dz)>7)return null;
+    const fx=owner.vx/speed,fz=owner.vz/speed;
+    if(fz*(owner.team===0?1:-1)<-.12)return null;
+    const along=dx*fx+dz*fz,across=dx*fz-dz*fx;
+    if(along>.55||Math.abs(across)>Math.max(2.3,-along+.45))return null;
+    // Project the visible ball onto the runner's lateral axis, including when strafing.
+    const ballSide=(this.ball.x-owner.x)*fz-(this.ball.z-owner.z)*fx;
+    const side=Math.sign(Math.abs(ballSide)>.10?ballSide:across)||1;
+    const lead=speed*TACKLE_CONTACT+.35;
+    return {x:clamp(owner.x+fx*lead+fz*side*.82,-SIDE+.2,SIDE-.2),
+      z:clamp(owner.z+fz*lead-fx*side*.82,-END+.2,END-.2),
+      alongside:along>-.15&&side*across>.55};
+  }
+  startTackle(p,owner,shoulder=this.pursuitShoulder(p,owner)){
     if(p.cool>0||owner.cool>0||owner.team===p.team)return false;
+    if(shoulder&&!shoulder.alongside)return false;
     const b=this.ball,d=gap(b,p);
     const loose=owner.speed>4.6||Math.sin(owner.phase)>.38;
     const guarding=p.role==="delay",support=this.strikerPass&&this.players[this.strikerPass.helper];
     const backed=guarding&&support&&gap(support,owner)<3.6;
     const longTouch=owner.speed>4.8&&gap(owner,b)>.70;
-    if(guarding&&!backed&&!longTouch&&d>.78)return false;
+    if(guarding&&!shoulder&&!backed&&!longTouch&&d>.78)return false;
     if(d>(loose?2.5:1.95)||(!guarding&&p.role!=="press"&&p.role!=="recover"&&d>1.25))return false;
     if(!loose&&owner.hold<.85)return false;
     const dx=b.x-p.x,dz=b.z-p.z;
     if(dx*Math.sin(p.facing)+dz*Math.cos(p.facing)<d*.28)return false;
     // Commit to the carrier's current path. A cut after this point changes
     // the ball's path but cannot redirect the defender's planted foot.
-    const aimX=dx+owner.vx*.18,aimZ=dz+owner.vz*.18;
+    const lead=shoulder?TACKLE_CONTACT:.18;
+    const aimX=dx+owner.vx*lead,aimZ=dz+owner.vz*lead;
     const length=Math.hypot(aimX,aimZ);
     if(length<.02)return false;
-    p.tackle={age:0,dx:aimX/length,dz:aimZ/length,owner:owner.id,contact:false};
+    const tx=aimX/length,tz=aimZ/length;
+    if(shoulder){
+      // Compare both players at first contact, after the defender plants and steps.
+      const travel=PLANT_SPEED*TACKLE_SET+LUNGE_SPEED*(TACKLE_CONTACT-TACKLE_SET);
+      const defender={team:p.team,x:p.x+tx*travel,z:p.z+tz*travel};
+      const runner={x:owner.x+owner.vx*lead,z:owner.z+owner.vz*lead};
+      if(!fieldTackleReaches(defender,runner,{x:p.x+aimX,z:p.z+aimZ},tx,tz))return false;
+    }
+    p.tackle={age:0,dx:tx,dz:tz,owner:owner.id,contact:false};
     return true;
   }
   advanceTackle(p,dt){
@@ -829,7 +863,7 @@ class Match{
     const contactEnd=p.team===1?SWEEP_END:TACKLE_CONTACT;
     t.contact=t.age<contactEnd&&t.age+dt>=TACKLE_CONTACT;
     t.age+=dt;this.pace(p,false,dt);
-    const speed=t.age<TACKLE_SET?.35:t.age<=TACKLE_CONTACT+.001?4.9:.38;
+    const speed=t.age<TACKLE_SET?PLANT_SPEED:t.age<=TACKLE_CONTACT+.001?LUNGE_SPEED:.38;
     this.move(p,t.dx,t.dz,speed,dt,Math.atan2(t.dx,t.dz));
     if(t.age>=TACKLE_END)p.tackle=null;
   }
@@ -923,8 +957,11 @@ class Match{
       this.to(p,x,z,p.burst,dt);
       p.facing=turnAngle(p.facing,Math.atan2(b.x-p.x,b.z-p.z),dt*8);return;
     }
-    if(p.tackle||(b.owner!==null&&this.startTackle(p,this.players[b.owner]))){
-      this.advanceTackle(p,dt);return;
+    if(p.tackle){this.advanceTackle(p,dt);return;}
+    if(b.owner!==null){
+      const owner=this.players[b.owner],shoulder=this.pursuitShoulder(p,owner);
+      if(this.startTackle(p,owner,shoulder)){this.advanceTackle(p,dt);return;}
+      if(shoulder){this.to(p,shoulder.x,shoulder.z,true,dt);return;}
     }
     if(b.owner===null&&b.receiver===p.id&&b.flight<2.6){
       // Only the intended receiver leaves their station to meet a pass.
@@ -1030,7 +1067,7 @@ class Match{
     if(!modal.hidden)return;lastModalFocus=document.activeElement;modeBefore=match.mode;dialog=kind;if(match.mode==="play")match.mode="pause";resetInput();
     if(document.pointerLockElement===world)document.exitPointerLock();
     const title=$("modal-title"),body=$("modal-body"),action=$("modal-action");modal.hidden=false;notice.textContent="";
-    if(kind==="help"){title.textContent="操作ガイド";body.innerHTML='<p><b>1–2–1の布陣</b><br>背番号10のあなたはFW。7番は左MF、8番は右MF、4番は後方のDF、1番はGKです。</p><p>水色のリングはパス先の味方。味方に預けたら、DFの背後へ斜めに走ろう。先に届くコースが開くと、味方がスルーパスを出します。</p><p>DFの足元の黄色い矢印が踏み込みの合図。左右の短い線は足が届く幅の目安です。外側のコースを取り続けるか、斜めにダッシュして抜けよう。</p><ul class="guide-list"><li><strong>方向転換</strong><span>マウスを左右に動かして選手と視点を旋回</span></li><li><strong>移動</strong><span>視点に対して W＝前、A＝左、S＝後ろ、D＝右。矢印キー・左スティックでも移動</span></li><li><strong>パス・プレス</strong><span>左クリック / J / パスボタン。味方が持つとパス要求。守備は短く押して離すと水色の軌跡を描いてタックル。約0.2秒長押ししながら中央を塞ぐと、近くの味方がパスコースを狙います。水色の弧がその合図です。</span></li><li><strong>シュート</strong><span>右クリック / K・Space / シュートボタン。押して力をため、離して蹴る。0.3秒を過ぎると徐々に足が遅くなり、最大までためるとダッシュ中でも通常移動の約半分の速さになります。右クリックでためている間はマウス感度が60%になります。ゴールの上の▼が狙っている横位置です。水色は枠内、オレンジは枠外です。</span></li><li><strong>ダッシュ</strong><span>Shiftを押しながら移動 /「走る」で切替。満タンから2秒。終了から0.3秒後に回復開始。使い切った場合は5.7秒で満タン</span></li><li><strong>ポーズ</strong><span>Escでマウス操作を解除して一時停止 / 一時停止ボタン</span></li></ul>';action.textContent=modeBefore==="play"?"試合に戻る":"閉じる";}
+    if(kind==="help"){title.textContent="操作ガイド";body.innerHTML='<p><b>1–2–1の布陣</b><br>背番号10のあなたはFW。7番は左MF、8番は右MF、4番は後方のDF、1番はGKです。</p><p>水色のリングはパス先の味方。味方に預けたら、DFの背後へ斜めに走ろう。先に届くコースが開くと、味方がスルーパスを出します。</p><p>DFの足元の黄色い矢印が踏み込みの合図。左右の短い線は足が届く幅の目安です。外側のコースを取り続けるか、斜めにダッシュして抜けよう。抜いた後も、DFはボール側の肩まで追ってきます。並ばれる前にシュートやパスを。</p><ul class="guide-list"><li><strong>方向転換</strong><span>マウスを左右に動かして選手と視点を旋回</span></li><li><strong>移動</strong><span>視点に対して W＝前、A＝左、S＝後ろ、D＝右。矢印キー・左スティックでも移動</span></li><li><strong>パス・プレス</strong><span>左クリック / J / パスボタン。味方が持つとパス要求。守備は短く押して離すと水色の軌跡を描いてタックル。約0.2秒長押ししながら中央を塞ぐと、近くの味方がパスコースを狙います。水色の弧がその合図です。</span></li><li><strong>シュート</strong><span>右クリック / K・Space / シュートボタン。押して力をため、離して蹴る。0.3秒を過ぎると徐々に足が遅くなり、最大までためるとダッシュ中でも通常移動の約半分の速さになります。右クリックでためている間はマウス感度が60%になります。ゴールの上の▼が狙っている横位置です。水色は枠内、オレンジは枠外です。</span></li><li><strong>ダッシュ</strong><span>Shiftを押しながら移動 /「走る」で切替。満タンから2秒。終了から0.3秒後に回復開始。使い切った場合は5.7秒で満タン</span></li><li><strong>ポーズ</strong><span>Escでマウス操作を解除して一時停止 / 一時停止ボタン</span></li></ul>';action.textContent=modeBefore==="play"?"試合に戻る":"閉じる";}
     else if(kind==="pause"){title.textContent="TIME OUT";body.innerHTML="<p>試合を一時停止しています。</p>";action.textContent="▶　試合を再開";}
     else{title.textContent="FULL TIME";const [a,b]=match.score,s=match.stats;body.innerHTML='<p>'+ (a>b?"COAST FC の勝利！":a<b?"SOL FC の勝利":"引き分け")+'</p><div class="result-score">CST　'+a+' – '+b+'　SOL</div><div class="stats"><div><b>'+s.goals+'</b><span>個人ゴール</span></div><div><b>'+s.assists+'</b><span>アシスト</span></div><div><b>'+s.shots+'</b><span>シュート</span></div><div><b>'+s.passes+'</b><span>成功パス</span></div></div>';action.textContent="▶　もう一度プレイ";}
     dirty=true;action.focus({preventScroll:true});}
