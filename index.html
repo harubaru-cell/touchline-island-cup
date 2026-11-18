@@ -623,7 +623,7 @@ const gap=(p,q)=>Math.hypot(p.x-q.x,p.z-q.z);
 function turnAngle(a,b,t){return a+Math.atan2(Math.sin(b-a),Math.cos(b-a))*Math.min(1,t);}
 const JOG_SPEED=4.2,SPRINT_SECONDS=2,RECOVERY_SECONDS=5.4;
 const TACKLE_SET=.29,TACKLE_CONTACT=.36,TACKLE_END=TACKLE_CONTACT+.40;
-const SWEEP_END=TACKLE_CONTACT+.12,SWEEP_HALF_WIDTH=1.12,SWEEP_REACH=1.38;
+const SWEEP_END=TACKLE_CONTACT+.12,SWEEP_HALF_WIDTH=1.40,SWEEP_REACH=1.65;
 const PRESS_HOLD=.20,POKE_WINDOW=.22,POKE_ANIMATION=.36;
 const positions=[[[0,-3.8],[-11,-5],[11,-2],[-1,-14.5],[0,-28]],[[2.5,4.8],[11,10],[-11,8.5],[0,18],[.15,28]]];
 class Match{
