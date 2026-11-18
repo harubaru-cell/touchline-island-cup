@@ -573,7 +573,7 @@ class Match{
     if(burst&&!p.winded){
       p.stamina=Math.max(0,p.stamina-dt/SPRINT_SECONDS);
       if(p.stamina<1e-6){p.stamina=0;p.winded=true;}
-      p.recoveryDelay=.6;
+      p.recoveryDelay=.3;
       return this.ball.owner===p.id?5.55:6.15;
     }
     const recoveryTime=Math.max(0,dt-p.recoveryDelay);
@@ -833,7 +833,7 @@ class Match{
     if(!modal.hidden)return;lastModalFocus=document.activeElement;modeBefore=match.mode;dialog=kind;if(match.mode==="play")match.mode="pause";resetInput();
     if(document.pointerLockElement===world)document.exitPointerLock();
     const title=$("modal-title"),body=$("modal-body"),action=$("modal-action");modal.hidden=false;notice.textContent="";
-    if(kind==="help"){title.textContent="操作ガイド";body.innerHTML='<p><b>1–2–1の布陣</b><br>背番号10のあなたはFW。7番は左MF、8番は右MF、4番は後方のDF、1番はGKです。</p><p>水色のリングはパス先の味方。味方に預けたら、DFの背後へ斜めに走ろう。先に届くコースが開くと、味方がスルーパスを出します。</p><p>1対1ではDFの足元の黄色い矢印が踏み込みの合図。横や斜めに切り返し、空いた側へダッシュしよう。</p><ul class="guide-list"><li><strong>方向転換</strong><span>マウスを左右に動かして選手と視点を旋回</span></li><li><strong>移動</strong><span>視点に対して W＝前、A＝左、S＝後ろ、D＝右。矢印キー・左スティックでも移動</span></li><li><strong>パス・プレス</strong><span>左クリック / J / パスボタン。味方が持つとパス要求。守備では相手のボール側に入り、足が届く距離でプレス</span></li><li><strong>シュート</strong><span>右クリック / K・Space / シュートボタン。押して力をため、離して蹴る。マウス操作では正面へシュート</span></li><li><strong>ダッシュ</strong><span>Shiftを押しながら移動 /「走る」で切替。満タンから2秒。使い切ると6秒で回復</span></li><li><strong>ポーズ</strong><span>Escでマウス操作を解除して一時停止 / 一時停止ボタン</span></li></ul>';action.textContent=modeBefore==="play"?"試合に戻る":"閉じる";}
+    if(kind==="help"){title.textContent="操作ガイド";body.innerHTML='<p><b>1–2–1の布陣</b><br>背番号10のあなたはFW。7番は左MF、8番は右MF、4番は後方のDF、1番はGKです。</p><p>水色のリングはパス先の味方。味方に預けたら、DFの背後へ斜めに走ろう。先に届くコースが開くと、味方がスルーパスを出します。</p><p>1対1ではDFの足元の黄色い矢印が踏み込みの合図。横や斜めに切り返し、空いた側へダッシュしよう。</p><ul class="guide-list"><li><strong>方向転換</strong><span>マウスを左右に動かして選手と視点を旋回</span></li><li><strong>移動</strong><span>視点に対して W＝前、A＝左、S＝後ろ、D＝右。矢印キー・左スティックでも移動</span></li><li><strong>パス・プレス</strong><span>左クリック / J / パスボタン。味方が持つとパス要求。守備では相手のボール側に入り、足が届く距離でプレス</span></li><li><strong>シュート</strong><span>右クリック / K・Space / シュートボタン。押して力をため、離して蹴る。マウス操作では正面へシュート</span></li><li><strong>ダッシュ</strong><span>Shiftを押しながら移動 /「走る」で切替。満タンから2秒。終了から0.3秒後に回復開始。使い切った場合は5.7秒で満タン</span></li><li><strong>ポーズ</strong><span>Escでマウス操作を解除して一時停止 / 一時停止ボタン</span></li></ul>';action.textContent=modeBefore==="play"?"試合に戻る":"閉じる";}
     else if(kind==="pause"){title.textContent="TIME OUT";body.innerHTML="<p>試合を一時停止しています。</p>";action.textContent="▶　試合を再開";}
     else{title.textContent="FULL TIME";const [a,b]=match.score,s=match.stats;body.innerHTML='<p>'+ (a>b?"COAST FC の勝利！":a<b?"SOL FC の勝利":"引き分け")+'</p><div class="result-score">CST　'+a+' – '+b+'　SOL</div><div class="stats"><div><b>'+s.goals+'</b><span>個人ゴール</span></div><div><b>'+s.assists+'</b><span>アシスト</span></div><div><b>'+s.shots+'</b><span>シュート</span></div><div><b>'+s.passes+'</b><span>成功パス</span></div></div>';action.textContent="▶　もう一度プレイ";}
     dirty=true;action.focus({preventScroll:true});}
