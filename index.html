@@ -21,6 +21,7 @@
 @media(max-height:550px) and (orientation:landscape){.bar-inner{height:39px}.brand{font-size:22px}.brand-mark{width:25px;height:25px}.brand-mark svg{width:22px}.match-head{padding:5px 0}.match-head h1{font-size:25px}.match-meta{display:none}.match-head .primary{min-height:28px;font-size:11px}.arena{height:calc(100svh - 92px);min-height:215px}.controls{display:none}.modal-card{padding:13px 20px}.modal-stripe{margin-bottom:5px}.modal-card h2{font-size:25px}.guide-list{gap:4px;margin:5px 0}.modal-card p{margin:5px 0}.modal-card .primary{min-height:30px}.arena.playing .player-hud{bottom:11px;left:135px}.arena.playing #radar{right:160px;bottom:12px}.scoreboard{transform:scale(.8);transform-origin:top left}}
 .brand,.primary,h1,.nav-button,.format{white-space:nowrap}.match-head>.primary{flex-shrink:0}
 .scoreboard,.player-hud,#radar,#announcement,.power,.state-chip{pointer-events:none}
+.energy i.recovering{background:repeating-linear-gradient(90deg,#e9bd69 0 15px,#6a5934 15px 17px)}
 .modal-card{max-height:100%;overflow-y:auto;overscroll-behavior:contain}
 @media(max-width:435px){.nav-actions{gap:8px}.nav-actions #sound span{display:none}.state-chip{display:none}.scoreboard{transform:scale(.76)}.arena .player-hud{transform:scale(.72)}#radar{width:86px;height:49px}.modal-card{max-height:100%;overflow-y:auto;overscroll-behavior:contain}.modal-card .primary{min-height:36px}.arena.playing #radar{width:76px;height:44px}}
 @media(max-width:360px){.format{display:none}.match-head h1{font-size:29px}.match-head .primary{padding-inline:9px}.controls-title b{display:none}.scoreboard{transform:scale(.69)}.view-tools{gap:3px}}
@@ -51,7 +52,7 @@
 <main>
   <section class="match-head" aria-label="試合情報"><div>
     <div class="title-row"><h1>ISLAND CUP</h1><span class="format">5 A-SIDE</span></div>
-    <div class="match-meta"><span><svg><use href="#i-pin"/></svg>パームベイ・スタジアム</span><i></i><span><svg><use href="#i-sun"/></svg>快晴</span></div>
+    <div class="match-meta"><span><svg><use href="#i-pin"/></svg>パームベイ・スタジアム</span><i></i><span><svg><use href="#i-sun"/></svg>快晴</span><i></i><span>布陣 1–2–1</span></div>
   </div><button id="primary" class="primary"><svg><use href="#i-play"/></svg><span>キックオフ</span></button></section>
   <section id="arena" class="arena" aria-label="3Dサッカーピッチ">
     <canvas id="world" tabindex="0" aria-label="サッカーゲーム画面。操作ガイドからキーを確認できます。"></canvas>
@@ -310,7 +311,7 @@ function laneSpace(from,to,opponents){
   return space;
 }
 
-const passPace=distance=>clamp(14+distance*.46,15,24);
+const passPace=distance=>clamp(12.9+distance*.46,14,22.5);
 function leadPass(from,q){
   let x=q.x,z=q.z;
   // A runner keeps moving while the ball slows on the grass. Refine the
@@ -327,41 +328,50 @@ function setRun(p,role,x,z,burst=false){
   p.role=role;p.tx=clamp(x,-SIDE+.7,SIDE-.7);p.tz=clamp(z,-END+.9,END-.9);p.burst=burst;
 }
 
+// Each team's left and right are relative to its attacking direction.
+const POSITIONS=["FW","LM","RM","DF","GK"];
+function zone(p,ball,attacking){
+  const dir=p.team===0?1:-1,depth=ball.z*dir;
+  if(p.position==="DF"){
+    const line=attacking?depth*.64-8:depth*.55-12;
+    return {x:clamp(ball.x*.27,-4.5,4.5),z:dir*clamp(line,-23,attacking?8:0)};
+  }
+  if(p.position==="FW"){
+    return {x:clamp(ball.x*(attacking?-.22:.20),-5,5),z:dir*clamp(depth*.50+(attacking?13:6),attacking?1:-3,attacking?25:15)};
+  }
+  const side=(p.position==="LM"?-1:1)*dir,near=ball.x*side>0;
+  const width=attacking?(near?8.7:12.1-clamp((depth-9)*.22,0,4)):10.5;
+  const stagger=attacking?(near?1.7:7.5):(near?-3:.3);
+  const line=depth*(attacking?.75:.58)+stagger;
+  return {x:side*width+ball.x*.12,z:dir*clamp(line,attacking?-14:-18,attacking?24:10)};
+}
+
 function supportRuns(match,team,carrier){
   const dir=team===0?1:-1,opponents=match.sides[1-team];
-  const nearWing=carrier.x<=0?1:2;
-  const anchor=match.sides[team][3];
-  const holdingWing=anchor===carrier||anchor.runUntil>match.tick?(carrier.i===nearWing?3-nearWing:nearWing):null;
   for(const p of match.sides[team]){
     if(p.keeper||p===carrier||p.id===0)continue;
-    let role,x,z;
-    if(carrier.keeper){
-      role="outlet";x=p.i===3?(carrier.x<=0?5:-5):p.i===1?-10:p.i===2?10:0;
-      z=dir*(-END+(p.i===3?7:p.i===0?19:13));
-    }else if(p.runUntil>match.tick){
-      role="give-and-go";x=p.runX;z=p.runZ;
-    }else if(p.i===3||p.i===holdingWing){
-      role="outlet";x=carrier.x*.42+(carrier.x<=0?3.5:-3.5);z=carrier.z-dir*8;
-    }else if(p.i===nearWing){
-      role="support";const side=p.i===1?-1:1;
-      x=carrier.x+side*6.5;if(Math.abs(x)>SIDE-2)x=carrier.x-side*6;
-      z=carrier.z+dir*(Math.abs(carrier.x)>9?-2:2.6);
-    }else{
-      role="runner";const side=p.i===1?-1:p.i===2?1:carrier.x>0?-1:1;
-      const finalThird=carrier.z*dir>13;
-      x=side*(finalThird?(p.i===0?2.7:5.6):(p.i===0?3.8:10.4));
-      z=carrier.z+dir*(p.i===0?10:7.7);z=dir*Math.min(z*dir,END-3.1);
-    }
+    const base=zone(p,carrier,true);
+    let x=base.x,z=base.z,role="support";
+    if(p.position==="DF")role="outlet";
+    else if(p.runUntil>match.tick){
+      role="give-and-go";x+=clamp(p.runX-x,-2.5,2.5);z+=clamp(p.runZ-z,-4,5);
+    }else if(p.position==="FW"||base.x*carrier.x<=0)role="runner";
+    if(carrier.keeper&&p.position==="DF")x=carrier.x<=0?5:-5;
     // Try nearby pockets so a supporting player steps out of a defender's shadow.
     let best=-Infinity,chosen;
     for(const [ox,oz] of [[0,0],[-2.4,0],[2.4,0],[0,-2.2],[0,2.2]]){
       const point={x:clamp(x+ox,-SIDE+1.5,SIDE-1.5),z:clamp(z+oz,-END+2,END-2)};
       const lane=laneSpace(carrier,point,opponents),room=closestDistance(point,opponents);
-      const score=Math.min(3.4,lane)*.95+Math.min(5,room)*.55-.34*Math.hypot(ox,oz)-.08*Math.hypot(p.x-point.x,p.z-point.z);
+      let crowd=0;
+      for(const mate of match.sides[team]){
+        if(mate!==p)crowd+=Math.max(0,6-Math.hypot(mate.x-point.x,mate.z-point.z));
+      }
+      const score=Math.min(3.4,lane)*.85+Math.min(5,room)*.5-.42*Math.hypot(ox,oz)-.08*Math.hypot(p.x-point.x,p.z-point.z)-crowd*1.2;
       if(score>best){best=score;chosen=point;}
     }
     const dist=Math.hypot(chosen.x-p.x,chosen.z-p.z);
-    setRun(p,role,chosen.x,chosen.z,dist>(role==="outlet"?9:4.3));
+    const burst=(role==="give-and-go"&&dist>4)||(role==="runner"&&dist>8&&carrier.z*dir>4);
+    setRun(p,role,chosen.x,chosen.z,burst);
   }
 }
 
@@ -371,45 +381,55 @@ function defend(match,team,carrier,free){
   const danger=free?ball:carrier;
   const target={x:danger.x+(danger.vx||0)*.23,z:danger.z+(danger.vz||0)*.23};
   const gx=-target.x,gz=ownGoal-target.z,length=Math.hypot(gx,gz)||1;
-  const front={x:target.x+gx/length*.48,z:target.z+gz/length*.48};
+  const contain=!free&&danger.hold<1.05&&danger.z*dir>-12&&danger.speed<5;
+  const approach=contain?1.95:.48;
+  const front={x:target.x+gx/length*approach,z:target.z+gz/length*approach};
   // The human can take the first press. Teammates then cover the space behind it.
   let presser,score=Infinity;
   for(const p of defenders){
     const d=Math.hypot(front.x-p.x,front.z-p.z);
     if(p.id===0&&(d>3.3||p.speed<1||(front.x-p.x)*p.vx+(front.z-p.z)*p.vz<0))continue;
-    const cost=d+(p.cool>.3?2:0)+(p.i===3?.85:0)-(p.role==="press"?.95:0);
+    const base=zone(p,danger,false),zoneDistance=Math.hypot(front.x-base.x,front.z-base.z);
+    const cost=d+.50*zoneDistance+(p.cool>.3?2:0)-(p.role==="press"?2.3:0);
     if(cost<score){score=cost;presser=p;}
   }
-  setRun(presser,"press",front.x,front.z,true);
+  const pressDistance=Math.hypot(front.x-presser.x,front.z-presser.z);
+  setRun(presser,"press",front.x,front.z,pressDistance<10&&(Math.hypot(danger.vx,danger.vz)>4.4||danger.z*dir<-11));
   const others=defenders.filter(p=>p!==presser&&p.id!==0);
-  const depth=Math.min(length*.60,4.5+Math.min(2,Math.abs(danger.vz||0)*.23));
+  const depth=Math.min(length*.70,8);
   const coverPoint={x:target.x+gx/length*depth,z:target.z+gz/length*depth};
-  const coverCost=p=>Math.hypot(p.x-coverPoint.x,p.z-coverPoint.z)-(p.role==="cover"?1:0);
+  const coverCost=p=>{
+    const home=zone(p,danger,false);
+    return Math.hypot(home.x-coverPoint.x,home.z-coverPoint.z)+(p.position==="FW"?6:0)-(p.role==="cover"?1.5:0);
+  };
   const cover=others.reduce((a,b)=>coverCost(b)<coverCost(a)?b:a);
-  const beaten=(presser.z-target.z)*dir>1.6;
-  const stepUp=beaten&&Math.hypot(cover.x-front.x,cover.z-front.z)<4.8;
-  setRun(cover,"cover",stepUp?front.x:coverPoint.x,stepUp?front.z:coverPoint.z,true);
+  const home=zone(cover,danger,false);
+  const coverX=home.x+clamp(coverPoint.x-home.x,-3,3),coverZ=home.z+clamp(coverPoint.z-home.z,-4,4);
+  setRun(cover,"cover",coverX,coverZ,danger.z*dir<-13&&(cover.z-coverZ)*dir>5);
   const markers=others.filter(p=>p!==cover);
-  const threats=match.sides[1-team].filter(p=>!p.keeper&&p!==carrier).sort((a,b)=>
-    Math.hypot(a.x*.65,a.z-ownGoal)-Math.hypot(b.x*.65,b.z-ownGoal));
-  for(const threat of threats){
-    if(!markers.length)break;
-    const x=threat.x*.78+danger.x*.22,z=clamp(threat.z-dir*1.5,-END+2,END-2);
-    // Stay goal-side even if the marked attacker is far behind the play.
-    const markZ=dir*Math.min(z*dir,danger.z*dir+.9);
-    let closest=0;
-    for(let i=1;i<markers.length;i++)if(Math.hypot(markers[i].x-x,markers[i].z-markZ)<Math.hypot(markers[closest].x-x,markers[closest].z-markZ))closest=i;
-    const p=markers.splice(closest,1)[0];
-    setRun(p,"mark",x,markZ,Math.hypot(p.x-x,p.z-markZ)>4);
+  const threats=match.sides[1-team].filter(p=>!p.keeper&&p!==carrier);
+  for(const p of markers){
+    const base=zone(p,danger,false);
+    let mark=null,best=8;
+    for(const threat of threats){
+      const d=Math.hypot(threat.x-base.x,threat.z-base.z);
+      if(d<best){mark=threat;best=d;}
+    }
+    let x=base.x,z=base.z;
+    if(mark){
+      x+=clamp(mark.x-base.x,-2.8,2.8);z+=clamp(mark.z-dir*1.6-base.z,-3,3);
+      threats.splice(threats.indexOf(mark),1);
+    }
+    setRun(p,"mark",x,z);
   }
 }
 
 function planPlay(match){
-  const b=match.ball,inFlight=b.owner===null&&b.kind==="pass"&&b.receiver!==null&&b.flight<1.8;
+  const b=match.ball,inFlight=b.owner===null&&b.kind==="pass"&&b.receiver!==null&&b.flight<2.6;
   const carrier=match.players[b.owner??b.last],attacking=carrier.team;
   if(b.owner!==null||inFlight){
     supportRuns(match,attacking,inFlight?match.players[b.receiver]:carrier);
-    if(inFlight&&b.receiver!==0)setRun(match.players[b.receiver],"receive",b.meetX,b.meetZ,true);
+    if(inFlight&&b.receiver!==0)setRun(match.players[b.receiver],"receive",b.meetX,b.meetZ);
     defend(match,1-attacking,carrier,b.owner===null);
   }else{
     for(const team of [0,1])defend(match,team,carrier,true);
@@ -420,15 +440,16 @@ function planPlay(match){
 "use strict";
 const gap=(p,q)=>Math.hypot(p.x-q.x,p.z-q.z);
 function turnAngle(a,b,t){return a+Math.atan2(Math.sin(b-a),Math.cos(b-a))*Math.min(1,t);}
-const positions=[[[0,-5.6],[-6.4,.5],[7.4,4.1],[-2.2,-12.5],[0,-28]],[[3.3,3.9],[-5,7.5],[7.6,13],[-1.2,20.2],[.15,28]]];
+const JOG_SPEED=4.2,SPRINT_SECONDS=2,RECOVERY_SECONDS=5.4;
+const positions=[[[0,-3.8],[-11,-5],[11,-2],[-1,-14.5],[0,-28]],[[2.5,4.8],[11,10],[-11,8.5],[0,18],[.15,28]]];
 class Match{
   constructor(notify){this.notify=notify;this.players=[];this.stats={goals:0,shots:0,passes:0,assists:0};this.score=[0,0];this.time=180;this.mode="ready";this.charge=null;this.freeze=0;this.tick=0;this.restartTeam=0;this.rng=seeded(521);this.pressLock=0;
-    for(let t=0;t<2;t++)positions[t].forEach(([x,z],i)=>{this.players.push({id:t*5+i,team:t,i,keeper:i===4,look:(i+t*3)%5,num:[10,7,8,9,1][i],x,z,phase:i*1.2+t,facing:t?Math.PI:0,speed:0,kick:0,hold:0,cool:0,think:0,tx:x,tz:z});});
+    for(let t=0;t<2;t++)positions[t].forEach(([x,z],i)=>{this.players.push({id:t*5+i,team:t,i,position:POSITIONS[i],keeper:i===4,look:(i+t*3)%5,num:[10,7,8,4,1][i],x,z,phase:i*1.2+t,facing:t?Math.PI:0,speed:0,kick:0,hold:0,cool:0,think:0,tx:x,tz:z});});
     this.sides=[this.players.slice(0,5),this.players.slice(5)];
     this.ball={x:0,z:0,y:0,vx:0,vz:0,vy:0,rot:0,last:0,owner:0,lock:0,kind:"dribble",receiver:null,flight:0};this.form(0,true);}
   get hero(){return this.players[0];}
   get stamina(){return this.hero.stamina;}
-  form(team,first=false){for(const p of this.players){let [x,z]=positions[p.team][p.i];if(!first&&!p.keeper){z=p.team===0?[-.6,-8,-6,-14][p.i]:[.6,8,6,14][p.i];if(p.i===0)x=p.team===team?0:4.5;}Object.assign(p,{x,z,facing:p.team?Math.PI:0,speed:0,vx:0,vz:0,kick:0,cool:0,think:0,hold:0,tx:x,tz:z,stamina:1,winded:false,runUntil:0,from:null,role:"",burst:false});}
+  form(team,first=false){for(const p of this.players){let [x,z]=positions[p.team][p.i];if(!first&&!p.keeper){z=p.team===0?[-.6,-8,-6,-14][p.i]:[.6,8,6,14][p.i];if(p.i===0)x=p.team===team?0:4.5;}Object.assign(p,{x,z,facing:p.team?Math.PI:0,speed:0,vx:0,vz:0,kick:0,cool:0,think:0,hold:0,tx:x,tz:z,stamina:1,winded:false,recoveryDelay:0,runUntil:0,from:null,role:"",burst:false});}
     this.ball.kind="restart";this.claim(this.players[team*5]);this.hero.facing=0;this.charge=null;this.pressLock=0;this.pressUntil=0;this.callUntil=0;this.attach();}
   claim(p){
     const b=this.ball,last=this.players[b.last];
@@ -441,7 +462,7 @@ class Match{
     if(p.id!==0)this.charge=null;
     if(p.team!==0||p.id===0)this.callUntil=0;
   }
-  attach(){let b=this.ball;if(b.owner===null)return;const p=this.players[b.owner],side=p.id===0?.385:.23,forward=.47+.065*Math.sin(p.phase)+Math.max(0,p.speed-4.9)*.18;
+  attach(){let b=this.ball;if(b.owner===null)return;const p=this.players[b.owner],side=p.id===0?.385:.23,forward=.47+.065*Math.sin(p.phase)+Math.max(0,p.speed-JOG_SPEED)*.18;
     b.x=p.x+Math.sin(p.facing)*forward+Math.cos(p.facing)*side;b.z=p.z+Math.cos(p.facing)*forward-Math.sin(p.facing)*side;b.y=Math.abs(Math.sin(p.phase))*.025;}
   move(p,x,z,speed,dt,facing){
     const len=Math.hypot(x,z);
@@ -455,11 +476,17 @@ class Match{
     if(facing!==undefined)p.facing=facing;
   }
   pace(p,burst,dt){
-    const sprint=burst&&!p.winded;
-    p.stamina=clamp(p.stamina+dt*(sprint?-.16:.115),0,1);
-    if(p.stamina<=0)p.winded=true;else if(p.stamina>.24)p.winded=false;
-    if(!sprint)return 4.9;
-    return this.ball.owner===p.id?6.55:7.35;
+    if(burst&&!p.winded){
+      p.stamina=Math.max(0,p.stamina-dt/SPRINT_SECONDS);
+      if(p.stamina<1e-6){p.stamina=0;p.winded=true;}
+      p.recoveryDelay=.6;
+      return this.ball.owner===p.id?5.55:6.15;
+    }
+    const recoveryTime=Math.max(0,dt-p.recoveryDelay);
+    p.recoveryDelay=Math.max(0,p.recoveryDelay-dt);
+    p.stamina=Math.min(1,p.stamina+recoveryTime/RECOVERY_SECONDS);
+    if(p.stamina>1-1e-6){p.stamina=1;p.winded=false;}
+    return JOG_SPEED;
   }
   to(p,x,z,burst,dt){const dx=x-p.x,dz=z-p.z,d=Math.hypot(dx,dz),pace=this.pace(p,burst&&d>.85,dt);this.move(p,d>.1?dx:0,d>.1?dz:0,Math.min(pace,d*6),dt);}
   kick(p,x,z,speed,loft,kind){const b=this.ball,dx=x-b.x,dz=z-b.z,n=Math.hypot(dx,dz)||1;
@@ -470,6 +497,7 @@ class Match{
       const alignment=((point.x-p.x)*Math.sin(p.facing)+(point.z-p.z)*Math.cos(p.facing))/(d||1);
       const space=laneSpace(p,point,opposition),room=closestDistance(point,opposition);
       let rank=(human?18:2)*alignment+clamp(ahead,-14,12)*.64-d*.32+Math.min(5,room)*.73+Math.min(3,space)*1.4;
+      if(!human)rank-=Math.max(0,d-15)*.68;
       if(space<1.3)rank-=(1.3-space)*(human?3:9);
       if(q.keeper)rank-=9;if(d<3)rank-=6;if(!human&&q.id===p.from&&q.vz*dir<1)rank-=4;
       if(rank>value){best=q;value=rank;}}
@@ -478,7 +506,7 @@ class Match{
     const point=leadPass(this.ball,q),d=gap(this.ball,point),dir=p.team===0?1:-1;
     this.kick(p,point.x,point.z,passPace(d),Math.min(2.2,d*.08),"pass");
     Object.assign(this.ball,{receiver:q.id,meetX:point.x,meetZ:point.z});
-    if(!p.keeper){p.runUntil=this.tick+2.9;p.runX=clamp(p.x+(q.x>p.x?-2.3:2.3),-SIDE+2,SIDE-2);p.runZ=clamp(p.z+dir*8.5,-END+2,END-2);}
+    if(!p.keeper&&p.position!=="DF"){p.runUntil=this.tick+3.4;p.runX=clamp(p.x+(q.x>p.x?-2.3:2.3),-SIDE+2,SIDE-2);p.runZ=clamp(p.z+dir*7,-END+2,END-2);}
     if(q.id===0){this.callUntil=0;this.notify(p.from===0?"ワンツー！":"パスが来る！",.8);}
   }
   actionPass(){if(this.mode!=="play"||this.freeze>0)return;let b=this.ball,h=this.hero;if(b.owner===0){this.charge=null;this.pass(h);return;}
@@ -513,17 +541,17 @@ class Match{
     const rivals=this.sides[1-p.team],room=closestDistance(p,rivals);
     if(p.keeper){
       this.to(p,p.x,p.z,false,dt);
-      if(p.hold>.7){
+      if(p.hold>1.1){
         const called=p.team===0&&this.callUntil>this.tick&&gap(p,this.hero)<23&&laneSpace(p,leadPass(p,this.hero),rivals)>1.1;
         this.pass(p,called?this.hero:undefined);
       }
       return;
     }
     if(this.tick>=p.think){
-      p.think=this.tick+.14;
+      p.think=this.tick+.19;
       const returnTo=this.players[p.from],calling=p.team===0&&this.callUntil>this.tick;
       const receiver=calling?this.hero:returnTo;
-      if(receiver&&p.hold>.23&&gap(p,receiver)<23){
+      if(receiver&&p.hold>(calling?.28:.48)&&gap(p,receiver)<23){
         const lead=leadPass(p,receiver),advance=(lead.z-p.z)*dir;
         const oneTwo=p.hold<1.8&&receiver.runUntil>this.tick&&receiver.vz*dir>1.4&&advance>.5;
         if((calling||(oneTwo&&Math.hypot(p.x,END-p.z*dir)>7.5))&&laneSpace(p,lead,rivals)>1.05&&closestDistance(lead,rivals)>1.15){
@@ -531,7 +559,7 @@ class Match{
         }
       }
       const depth=END-p.z*dir,goalDistance=Math.hypot(depth,p.x);
-      if(goalDistance<14.5&&p.hold>.29){
+      if(goalDistance<14.5&&p.hold>.45){
         const keeper=rivals[4],corners=[-2.65,2.65];
         const shotValue=x=>Math.min(3.6,laneSpace(p,{x,z:dir*END},rivals.slice(0,4)))+.68*Math.abs(x-keeper.x);
         const x=shotValue(corners[0])>shotValue(corners[1])?corners[0]:corners[1];
@@ -543,15 +571,18 @@ class Match{
       const gain=(point.z-p.z)*dir,available=closestDistance(point,rivals);
       const cutback=depth<9&&Math.abs(p.x)>6&&Math.abs(point.x)<Math.abs(p.x)-2;
       const forwardOption=gain>2.5&&available>2.25&&gap(p,q)<22;
-      if(p.hold>.32&&lane>1.1&&(room<3.6||cutback||(forwardOption&&p.hold>.65)||p.hold>2.9)){
+      if(p.hold>(room<2.3?.48:.9)&&lane>1.1&&(room<3.6||cutback||(forwardOption&&p.hold>1.45)||p.hold>3.4)){
         this.pass(p,q);return;
       }
       // Escape pressure sideways, then carry toward the open side of the goal.
       const closest=rivals.reduce((a,b)=>gap(a,p)<gap(b,p)?a:b);
       const evade=room<4.5?(p.x>=closest.x?1:-1)*(4.5-room)*1.4:0;
-      p.tx=clamp(p.x*.70+evade,-SIDE+1.5,SIDE-1.5);p.tz=dir*(END-2);
+      const channel=p.position==="LM"?-dir:p.position==="RM"?dir:0;
+      p.tx=clamp(p.x*.60+channel*(depth<11?1.6:4.2)+evade,-SIDE+1.5,SIDE-1.5);
+      p.tz=dir*(p.position==="DF"?3:END-2);
     }
-    this.to(p,p.tx,p.tz,room>3.2,dt);
+    const breakaway=p.position!=="DF"&&p.z*dir>10&&room>4.5;
+    this.to(p,p.tx,p.tz,breakaway,dt);
   }
   ai(p,dt){
     const b=this.ball,dir=p.team===0?1:-1;
@@ -569,11 +600,16 @@ class Match{
       this.to(p,x,z,rush||b.kind==="shot",dt);
       p.facing=turnAngle(p.facing,Math.atan2(b.x-p.x,b.z-p.z),dt*8);return;
     }
-    if(b.owner===null&&b.receiver===p.id&&b.flight<1.8){
-      // Meet the arriving pass instead of switching to defence while it travels.
-      const speed=Math.hypot(b.vx,b.vz),lead=Math.min(.33,gap(p,b)/Math.max(1,speed));
-      const near=gap(b,p)<4||speed<5;
-      this.to(p,near?b.x+b.vx*lead:b.meetX,near?b.z+b.vz*lead:b.meetZ,true,dt);return;
+    if(b.owner===null&&b.receiver===p.id&&b.flight<2.6){
+      // Only the intended receiver leaves their station to meet a pass.
+      // Find a reachable point along the ball's path rather than waiting for it.
+      let x=b.meetX,z=b.meetZ;
+      for(let t=.1;t<=1.7;t+=.12){
+        const travel=-Math.expm1(-.55*t)/.55;
+        const px=b.x+b.vx*travel,pz=b.z+b.vz*travel;
+        if(Math.hypot(px-p.x,pz-p.z)<=JOG_SPEED*t+.5){x=px;z=pz;break;}
+      }
+      this.to(p,x,z,gap(p,b)<8&&Math.hypot(p.x-x,p.z-z)>3.5,dt);return;
     }
     this.to(p,p.tx,p.tz,p.burst,dt);
     if(p.role==="press"&&gap(p,b)<1.8)p.facing=turnAngle(p.facing,Math.atan2(b.x-p.x,b.z-p.z),dt*18);
@@ -611,7 +647,7 @@ class Match{
     if(Math.abs(b.z)>END){const line=Math.sign(b.z)*END,t=clamp((line-oldZ)/(b.z-oldZ||1),0,1),x=mix(oldX,b.x,t),height=mix(oldY,b.y,t);
       if(Math.abs(x)<GOAL-.1&&height+.17<BAR){this.scoreGoal(b.z>0?0:1);}else this.out(x,b.z,true);return;}
     if(Math.abs(b.x)>SIDE){this.out(b.x,b.z,false);return;}
-    if(b.lock===0){const candidates=this.players.filter(p=>p.cool===0&&b.y<(p.keeper?1.85:1.09)&&gap(p,b)<(p.keeper?.98:b.kind==="shot"?.44:.72)).sort((a,c)=>gap(a,b)-gap(c,b));if(candidates.length){this.claim(candidates[0]);candidates[0].cool=.4;}}
+    if(b.lock===0){const candidates=this.players.filter(p=>p.cool===0&&b.y<(p.keeper?1.85:1.09)&&gap(p,b)<(p.keeper?.98:b.kind==="shot"?.44:.72)).sort((a,c)=>gap(a,b)-gap(c,b));if(candidates.length){this.claim(candidates[0]);candidates[0].cool=.56;}}
   }
 }
 
@@ -649,7 +685,7 @@ class Match{
     if(!modal.hidden)return;lastModalFocus=document.activeElement;modeBefore=match.mode;dialog=kind;if(match.mode==="play")match.mode="pause";resetInput();
     if(document.pointerLockElement===world)document.exitPointerLock();
     const title=$("modal-title"),body=$("modal-body"),action=$("modal-action");modal.hidden=false;notice.textContent="";
-    if(kind==="help"){title.textContent="操作ガイド";body.innerHTML='<p>水色のリングはパス先の味方。預けたら空いた場所へ走ろう。コースが開けばリターンパスを受けられます。</p><ul class="guide-list"><li><strong>方向転換</strong><span>マウスを左右に動かして選手と視点を旋回</span></li><li><strong>移動</strong><span>視点に対して W＝前、A＝左、S＝後ろ、D＝右。矢印キー・左スティックでも移動</span></li><li><strong>パス・プレス</strong><span>左クリック / J / パスボタン。味方が持つとパス要求。守備では相手のボール側に入り、足が届く距離でプレス</span></li><li><strong>シュート</strong><span>右クリック / K・Space / シュートボタン。押して力をため、離して蹴る。マウス操作では正面へシュート</span></li><li><strong>ダッシュ</strong><span>Shiftを押しながら移動 /「走る」で切替</span></li><li><strong>ポーズ</strong><span>Escでマウス操作を解除して一時停止 / 一時停止ボタン</span></li></ul>';action.textContent=modeBefore==="play"?"試合に戻る":"閉じる";}
+    if(kind==="help"){title.textContent="操作ガイド";body.innerHTML='<p><b>1–2–1の布陣</b><br>背番号10のあなたはFW。7番は左MF、8番は右MF、4番は後方のDF、1番はGKです。</p><p>水色のリングはパス先の味方。預けたら空いた場所へ走ろう。コースが開けばリターンパスを受けられます。</p><ul class="guide-list"><li><strong>方向転換</strong><span>マウスを左右に動かして選手と視点を旋回</span></li><li><strong>移動</strong><span>視点に対して W＝前、A＝左、S＝後ろ、D＝右。矢印キー・左スティックでも移動</span></li><li><strong>パス・プレス</strong><span>左クリック / J / パスボタン。味方が持つとパス要求。守備では相手のボール側に入り、足が届く距離でプレス</span></li><li><strong>シュート</strong><span>右クリック / K・Space / シュートボタン。押して力をため、離して蹴る。マウス操作では正面へシュート</span></li><li><strong>ダッシュ</strong><span>Shiftを押しながら移動 /「走る」で切替。満タンから2秒。使い切ると6秒で回復</span></li><li><strong>ポーズ</strong><span>Escでマウス操作を解除して一時停止 / 一時停止ボタン</span></li></ul>';action.textContent=modeBefore==="play"?"試合に戻る":"閉じる";}
     else if(kind==="pause"){title.textContent="TIME OUT";body.innerHTML="<p>試合を一時停止しています。</p>";action.textContent="▶　試合を再開";}
     else{title.textContent="FULL TIME";const [a,b]=match.score,s=match.stats;body.innerHTML='<p>'+ (a>b?"COAST FC の勝利！":a<b?"SOL FC の勝利":"引き分け")+'</p><div class="result-score">CST　'+a+' – '+b+'　SOL</div><div class="stats"><div><b>'+s.goals+'</b><span>個人ゴール</span></div><div><b>'+s.assists+'</b><span>アシスト</span></div><div><b>'+s.shots+'</b><span>シュート</span></div><div><b>'+s.passes+'</b><span>成功パス</span></div></div>';action.textContent="▶　もう一度プレイ";}
     dirty=true;action.focus({preventScroll:true});}
@@ -747,7 +783,7 @@ class Match{
     pen.beginPath();pen.arc(px(b.z),py(b.x),3.3,0,TAU);pen.fillStyle="#fffbe0";pen.fill();}
   function hud(){const mode=match.mode;if(cachedMode!==mode){cachedMode=mode;arena.classList.toggle("playing",mode==="play");const b=$("primary");
       b.querySelector("span").textContent=mode==="ready"?"キックオフ":mode==="end"?"再試合":mode==="pause"?"試合に戻る":"一時停止";b.querySelector("use").setAttribute("href",mode==="play"?"#i-pause":"#i-play");$("field-pause").querySelector("use").setAttribute("href",mode==="play"?"#i-pause":"#i-play");$("field-pause").setAttribute("aria-label",b.textContent.trim());$("state-chip").querySelector("b").textContent={ready:"READY",play:"LIVE",pause:"PAUSED",end:"FULL TIME"}[mode];}
-    const seconds=Math.ceil(match.time);$("clock").textContent=String(Math.floor(seconds/60)).padStart(2,"0")+":"+String(seconds%60).padStart(2,"0");$("home-score").textContent=match.score[0];$("away-score").textContent=match.score[1];$("energy").style.width=(match.stamina*100)+"%";
+    const seconds=Math.ceil(match.time);$("clock").textContent=String(Math.floor(seconds/60)).padStart(2,"0")+":"+String(seconds%60).padStart(2,"0");$("home-score").textContent=match.score[0];$("away-score").textContent=match.score[1];$("energy").style.width=(match.stamina*100)+"%";$("energy").classList.toggle("recovering",match.hero.winded);$("run").textContent=match.hero.winded?"回復中":"走る";
     $("power").style.display=match.charge!==null?"block":"none";if(match.charge!==null)$("power").querySelector("i").style.width=Math.max(5,match.charge*100)+"%";
     $("pass").textContent=match.ball.owner===0?"パス":match.ball.owner!==null&&match.players[match.ball.owner].team===0?"要求":"プレス";if(age>noticeEnd&&notice.textContent)notice.textContent="";}
   function draw(){
