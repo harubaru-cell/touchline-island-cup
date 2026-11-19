@@ -69,7 +69,7 @@
     <div class="touch-ui"><div id="stick" class="stick" aria-label="移動スティック"><i></i></div><div class="touch-actions"><button id="run" aria-pressed="false">走る</button><button id="pass">パス</button><button id="shoot">シュート</button></div></div>
     <div class="modal-back" id="modal" hidden><div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button id="dismiss" class="close" aria-label="閉じる"><svg><use href="#i-close"/></svg></button><div class="modal-stripe"></div><h2 id="modal-title"></h2><div id="modal-body"></div><button class="primary" id="modal-action"></button></div></div>
   </section>
-  <section class="controls" aria-label="操作方法"><div class="controls-title"><svg><use href="#i-pad"/></svg><b>CONTROLS</b></div><div class="bindings"><div><kbd>マウス ↔</kbd>方向転換</div><div><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>移動</div><div><kbd>左クリック</kbd>パス / プレス</div><div><kbd>右クリック</kbd>シュート</div><div><kbd>Shift</kbd>ダッシュ</div><div><kbd>Esc</kbd>ポーズ</div></div><div class="touch-legend">左スティックで移動 · シュート長押しで強く蹴る</div></section>
+  <section class="controls" aria-label="操作方法"><div class="controls-title"><svg><use href="#i-pad"/></svg><b>CONTROLS</b></div><div class="bindings"><div><kbd>マウス ↔</kbd>方向転換</div><div><span class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>移動</div><div><kbd>左クリック</kbd>パス・長押しでスルー / プレス</div><div><kbd>右クリック</kbd>シュート</div><div><kbd>Shift</kbd>ダッシュ</div><div><kbd>Esc</kbd>ポーズ</div></div><div class="touch-legend">左スティックで移動 · パス長押し＋スライドでスルー</div></section>
 </main>
 <script>
 "use strict";
@@ -452,6 +452,26 @@ function throughPass(match,passer){
   return best;
 }
 
+function manualPassLane(match,yaw){
+  const b=match.ball,dx=Math.sin(yaw),dz=Math.cos(yaw);
+  let receiver=null,distance=13,speed=12,best=Infinity;
+  // Choose only the pace. Every possible meeting point is on the player's ray.
+  for(const q of match.sides[match.hero.team]){
+    if(q===match.hero||q.keeper||Math.hypot(q.vx,q.vz)<1)continue;
+    for(let i=3;i<=19;i++){
+      const t=i*.1,x=q.x+q.vx*t-b.x,z=q.z+q.vz*t-b.z;
+      const along=x*dx+z*dz,across=Math.abs(x*dz-z*dx);
+      if(along<3||along>23||across>Math.min(2.4,.5+along*.11))continue;
+      if(Math.abs(b.x+along*dx)>SIDE-.25||Math.abs(b.z+along*dz)>END-.25)continue;
+      const pace=along*.72/-Math.expm1(-.72*t);
+      if(pace<8||pace>23)continue;
+      const cost=across+Math.abs(pace-passPace(along))*.15;
+      if(cost<best){best=cost;receiver=q;distance=along;speed=pace;}
+    }
+  }
+  return {receiver,point:{x:b.x+dx*distance,z:b.z+dz*distance},speed};
+}
+
 function setRun(p,role,x,z,burst=false){
   p.role=role;p.tx=clamp(x,-SIDE+.7,SIDE-.7);p.tz=clamp(z,-END+.9,END-.9);p.burst=burst;
 }
@@ -511,8 +531,23 @@ function supportRuns(match,team,carrier){
   const outlet=centralBuild?midfieldOutlet(match,df,dir):null;
   const fromDefender=match.ball.buildUpWing===carrier.id&&(match.ball.owner===null||carrier.hold<2.2);
   const turned=fromDefender&&match.ball.owner===carrier.id&&Math.cos(carrier.facing)*dir>.45&&closestDistance(carrier,opponents)>2.3;
+  const wings=match.sides[team].slice(1,3);
+  const inside=carrier.position==="FW"&&match.ball.owner===carrier.id;
+  const farWing=carrier.x*dir>=0?wings[0]:wings[1];
+  // Finish a run through a camera turn or a small change of flank.
+  let diagonal=inside?wings.find(p=>p.role==="diagonal"&&gap(p,{x:p.tx,z:p.tz})>1.3):null;
+  let runPoint=diagonal?{x:diagonal.tx,z:diagonal.tz}:null;
+  if(inside&&!diagonal&&Math.abs(carrier.x)>1.2&&carrier.z*dir> -7&&carrier.z*dir<20&&
+     Math.cos(carrier.facing)*dir>.35&&gap(opponents[3],carrier)<8){
+    const depth=Math.min(END-3,Math.max(carrier.z*dir+9,opponents[3].z*dir+3));
+    const point={x:(farWing.position==="LM"?-dir:dir)*4.8,z:dir*depth};
+    if((point.z-farWing.z)*dir>3&&gap(farWing,point)<19&&closestDistance(point,opponents)>2.3){
+      diagonal=farWing;runPoint=point;
+    }
+  }
   for(const p of match.sides[team]){
     if(p.keeper||p===carrier||p.id===0)continue;
+    if(p===diagonal){setRun(p,"diagonal",runPoint.x,runPoint.z,true);continue;}
     if(p===outlet?.wing){
       setRun(p,"show",outlet.point.x,outlet.point.z,gap(p,outlet.point)>9);continue;
     }
@@ -732,7 +767,7 @@ function chaseRebound(match){
 
 function planPlay(match){
   const b=match.ball,inFlight=b.owner===null&&b.kind==="pass"&&b.receiver!==null&&b.flight<2.6;
-  if(b.owner===null&&b.kind==="shot"){chaseRebound(match);return;}
+  if(b.owner===null&&(b.kind==="shot"||b.manual&&!inFlight)){chaseRebound(match);return;}
   const carrier=match.players[b.owner??b.last],attacking=carrier.team;
   if(b.owner!==null||inFlight){
     supportRuns(match,attacking,inFlight?match.players[b.receiver]:carrier);
@@ -754,6 +789,7 @@ const TACKLE_SET=.29,TACKLE_CONTACT=.36,TACKLE_END=TACKLE_CONTACT+.40;
 const PLANT_SPEED=.35,LUNGE_SPEED=4.9;
 const SWEEP_END=TACKLE_CONTACT+.12,SWEEP_HALF_WIDTH=1.40,SWEEP_REACH=1.65;
 const PRESS_HOLD=.20,POKE_WINDOW=.22,POKE_ANIMATION=.36;
+const PASS_HOLD=.20;
 const POKE_REACH=1.55,POKE_WIDTH=.85;
 const positions=[[[0,-3.8],[-11,-5],[11,-2],[-1,-14.5],[0,-28]],[[2.5,4.8],[11,10],[-11,8.5],[0,18],[.15,28]]];
 function advanceFreeBall(b,dt){
@@ -786,10 +822,11 @@ class Match{
     for(const p of this.players){p.tackle=null;p.touchSide=p.id===0?.385:.23;}
     this.clearDefense();this.ball.kind="restart";this.claim(this.players[team*5]);this.hero.facing=0;this.charge=null;this.pressLock=0;this.callUntil=0;this.attach();}
   clearDefense(){
-    this.cancelPress();this.pressUntil=0;this.hero.poke=null;this.turf=null;this.strikerPass=null;this.markedStriker=null;
+    this.passInput=null;this.cancelPress();this.pressUntil=0;this.hero.poke=null;this.turf=null;this.strikerPass=null;this.markedStriker=null;
   }
   claim(p){
     const b=this.ball,last=this.players[b.last];
+    this.passInput=null;b.manual=false;
     const trapWon=p.team===0&&p.id!==0&&last.team===1&&
       ((p.role==="trap"&&b.owner!==null&&pressingCarrier(this,last))||
        (p.role==="screen"&&b.owner===null&&b.pressedPass&&b.kind==="pass"));
@@ -862,6 +899,7 @@ class Match{
     this.move(p,speed?dx:0,speed?dz:0,speed,dt);
   }
   kick(p,x,z,speed,loft,kind){const b=this.ball,dx=x-b.x,dz=z-b.z,n=Math.hypot(dx,dz)||1;
+    this.passInput=null;b.manual=false;
     this.strikerPass=null;
     if(kind!=="pass")this.markedStriker=null;
     b.pressedPass=kind==="pass"&&pressingCarrier(this,p);b.buildUpWing=null;
@@ -883,26 +921,33 @@ class Match{
       if(q.keeper)rank-=9;if(d<3)rank-=6;if(!human&&q.id===p.from&&q.vz*dir<1)rank-=4;
       if(rank>value){best=q;value=rank;}}
     return best;}
-  pass(p,to,throughPoint){const q=to||this.target(p,p.id===0);if(!q)return;
+  pass(p,to,throughPoint,groundSpeed=null){
+    const manual=groundSpeed!==null,q=manual?to:to||this.target(p,p.id===0);
+    if(!q&&!manual)return;
     const point=throughPoint||leadPass(this.ball,q),d=gap(this.ball,point),dir=p.team===0?1:-1;
-    this.kick(p,point.x,point.z,passPace(d),Math.min(2.2,d*.08),"pass");
-    Object.assign(this.ball,{receiver:q.id,meetX:point.x,meetZ:point.z});
-    if(p.position==="DF"&&q.role==="show")this.ball.buildUpWing=q.id;
-    if(q.position==="FW"&&Math.abs(point.x)<8.5&&point.z*dir>2&&(point.z-p.z)*dir>2.5){
+    this.kick(p,point.x,point.z,groundSpeed??passPace(d),manual?0:Math.min(2.2,d*.08),"pass");
+    Object.assign(this.ball,{manual,receiver:q?.id??null,meetX:point.x,meetZ:point.z});
+    if(manual)this.ball.y=0;
+    if(p.position==="DF"&&q?.role==="show")this.ball.buildUpWing=q.id;
+    if(q?.position==="FW"&&Math.abs(point.x)<8.5&&point.z*dir>2&&(point.z-p.z)*dir>2.5){
       const wings=this.sides[1-p.team].slice(1,3);
       const cost=wing=>gap(wing,point)+.32*Math.abs(wing.x-p.x);
       const helper=cost(wings[0])<=cost(wings[1])?wings[0]:wings[1];
       this.strikerPass={runner:q.id,helper:helper.id};
     }
-    if(!p.keeper&&p.position!=="DF"){p.runUntil=this.tick+3.4;p.runX=clamp(p.x+(q.x>p.x?-2.3:2.3),-SIDE+2,SIDE-2);p.runZ=clamp(p.z+dir*7,-END+2,END-2);}
-    if(q.id===0){this.callUntil=0;this.notify(throughPoint?"スルーパス！":p.from===0?"ワンツー！":"パスが来る！",.8);}
+    if(!p.keeper&&p.position!=="DF"){p.runUntil=this.tick+3.4;p.runX=clamp(p.x+((q??point).x>p.x?-2.3:2.3),-SIDE+2,SIDE-2);p.runZ=clamp(p.z+dir*7,-END+2,END-2);}
+    if(q?.id===0){this.callUntil=0;this.notify(throughPoint?"スルーパス！":p.from===0?"ワンツー！":"パスが来る！",.8);}
   }
   actionPass(){if(this.mode!=="play"||this.freeze>0)return;let b=this.ball,h=this.hero;if(b.owner===0){this.charge=null;this.pass(h);return;}
     if(b.owner!==null&&this.players[b.owner].team===0){this.callUntil=this.tick+1.4;this.players[b.owner].think=this.tick;this.notify("パスを要求",.65);return;}
     this.pokeBall();}
   beginAction(source,now){
-    if(this.mode!=="play"||this.freeze>0||this.pressInput)return;
+    if(this.mode!=="play"||this.freeze>0||this.pressInput||this.passInput)return;
     const b=this.ball;
+    if(b.owner===0){
+      if(this.charge===null)this.passInput={source,start:now,aiming:false};
+      return;
+    }
     if(this.players[b.owner??b.last].team===0){
       if(b.owner!==null)this.actionPass();
       return;
@@ -910,11 +955,21 @@ class Match{
     this.pressInput={source,start:now};this.hero.stance="set";
   }
   updatePress(now){
+    if(this.passInput)this.passInput.aiming=now-this.passInput.start>=PASS_HOLD;
     if(this.pressInput&&this.hero.stance==="set"&&now-this.pressInput.start>=PRESS_HOLD){
       this.hero.stance="contain";this.nextPlan=0;
     }
   }
-  endAction(source,now){
+  endAction(source,now,yaw=this.hero.facing){
+    if(this.passInput?.source===source){
+      this.updatePress(now);
+      const manual=this.passInput.aiming;this.passInput=null;
+      if(this.mode!=="play"||this.freeze>0||this.ball.owner!==0)return;
+      if(manual){
+        const lane=manualPassLane(this,yaw);this.pass(this.hero,lane.receiver,lane.point,lane.speed);
+      }else this.actionPass();
+      return true;
+    }
     if(this.pressInput?.source!==source)return;
     this.updatePress(now);
     const tap=this.hero.stance==="set";
@@ -924,6 +979,10 @@ class Match{
   cancelPress(source){
     if(source!==undefined&&this.pressInput?.source!==source)return;
     this.pressInput=null;this.hero.stance=null;this.nextPlan=0;
+  }
+  cancelAction(source){
+    if(source===undefined||this.passInput?.source===source)this.passInput=null;
+    this.cancelPress(source);
   }
   pokeBall(){
     const h=this.hero,b=this.ball;
@@ -1012,7 +1071,7 @@ class Match{
     this.move(p,t.dx,t.dz,speed,dt,Math.atan2(t.dx,t.dz));
     if(t.age>=TACKLE_END)p.tackle=null;
   }
-  startShot(){if(this.mode==="play"&&this.freeze<=0&&this.ball.owner===0&&this.charge===null)this.charge=0;}
+  startShot(){if(this.mode==="play"&&this.freeze<=0&&this.ball.owner===0&&!this.passInput&&this.charge===null)this.charge=0;}
   releaseShot(aimYaw){if(this.charge===null)return;const power=this.charge;this.charge=null;if(this.mode!=="play"||this.ball.owner!==0)return;
     const h=this.hero,gk=this.players[9],dx=Math.sin(h.facing);
     let x,z;
@@ -1129,13 +1188,15 @@ class Match{
     if(b.owner===null&&b.receiver===p.id&&b.flight<2.6){
       // Only the intended receiver leaves their station to meet a pass.
       // Find a reachable point along the ball's path rather than waiting for it.
+      const drag=b.manual?.72:.55,reachSpeed=b.manual&&!p.winded?6.15:JOG_SPEED;
       let x=b.meetX,z=b.meetZ;
+      if(b.manual&&(x-b.x)*b.vx+(z-b.z)*b.vz<0){x=b.x+b.vx*.8;z=b.z+b.vz*.8;}
       for(let t=.1;t<=1.7;t+=.12){
-        const travel=-Math.expm1(-.55*t)/.55;
+        const travel=-Math.expm1(-drag*t)/drag;
         const px=b.x+b.vx*travel,pz=b.z+b.vz*travel;
-        if(Math.hypot(px-p.x,pz-p.z)<=JOG_SPEED*t+.5){x=px;z=pz;break;}
+        if(Math.hypot(px-p.x,pz-p.z)<=reachSpeed*t+.5){x=px;z=pz;break;}
       }
-      this.to(p,x,z,gap(p,b)<8&&Math.hypot(p.x-x,p.z-z)>3.5,dt);return;
+      this.to(p,x,z,b.manual||gap(p,b)<8&&Math.hypot(p.x-x,p.z-z)>3.5,dt);return;
     }
     const previousFacing=p.facing;
     this.to(p,p.tx,p.tz,p.burst,dt);
@@ -1225,6 +1286,7 @@ class Match{
   let age=0,noticeEnd=0,match=new Match(announce),last=0,acc=0,modeBefore="",dialog="",runToggle=false,raf=0,dirty=true,cachedMode="",lastModalFocus=null;
   const follow={x:0,z:0};
   let touchCamera=matchMedia("(pointer:coarse)").matches,stickBasis=0,shotSource=null;
+  let touchPass=null;
   let hadMouseLock=false,edgeTurn=0,justUnlockedAt=-Infinity,lastMouseTurn=-Infinity;
   let soundOn=true,context=null;try{soundOn=localStorage.getItem("touchline-sound")!=="off";}catch{}
   function tone(freq,duration,type="sine",volume=.055,delay=0,end=freq){if(!soundOn||!context||context.state!=="running")return;
@@ -1233,7 +1295,7 @@ class Match{
   function announce(msg,sec=1,style=""){notice.textContent=msg;notice.className=style;noticeEnd=age+sec;if(style==="goal"){[392,494,587,784].forEach((v,i)=>tone(v,.22,"triangle",.08,i*.085));}}
   function soundUI(){const b=$("sound");b.setAttribute("aria-pressed",String(soundOn));b.querySelector("use").setAttribute("href",soundOn?"#i-sound":"#i-mute");b.title=soundOn?"サウンドをオフ":"サウンドをオン";}
   $("sound").onclick=()=>{soundOn=!soundOn;try{localStorage.setItem("touchline-sound",soundOn?"on":"off");}catch{}audioReady();soundUI();if(soundOn)tone(523,.12);};soundUI();
-  function resetInput(){keys.clear();joystick.x=joystick.z=0;joystick.id=null;$("stick").firstElementChild.style.transform="";match.charge=null;match.cancelPress();match.pressUntil=0;shotSource=null;edgeTurn=0;runToggle=false;$("run").setAttribute("aria-pressed","false");}
+  function resetInput(){keys.clear();joystick.x=joystick.z=0;joystick.id=null;$("stick").firstElementChild.style.transform="";match.charge=null;match.cancelAction();match.pressUntil=0;shotSource=null;touchPass=null;edgeTurn=0;runToggle=false;$("run").setAttribute("aria-pressed","false");}
   function focusPitch(){try{world.focus({preventScroll:true});}catch{world.focus();}}
   function lockMouse(){
     if(document.pointerLockElement===world||!world.requestPointerLock)return;
@@ -1251,7 +1313,7 @@ class Match{
     if(!modal.hidden)return;lastModalFocus=document.activeElement;modeBefore=match.mode;dialog=kind;if(match.mode==="play")match.mode="pause";resetInput();
     if(document.pointerLockElement===world)document.exitPointerLock();
     const title=$("modal-title"),body=$("modal-body"),action=$("modal-action");modal.hidden=false;notice.textContent="";
-    if(kind==="help"){title.textContent="操作ガイド";body.innerHTML='<p><b>1–2–1の布陣</b><br>背番号10のあなたはFW。7番は左MF、8番は右MF、4番は後方のDF、1番はGKです。</p><p>水色のリングはパス先の味方。味方に預けたら、DFの背後へ斜めに走ろう。先に届くコースが開くと、味方がスルーパスを出します。</p><p>DFの足元の黄色い矢印が踏み込みの合図。左右の短い線は足が届く幅の目安です。外側のコースを取り続けるか、斜めにダッシュして抜けよう。抜いた後も、DFはボール側の肩まで追ってきます。並ばれる前にシュートやパスを。</p><ul class="guide-list"><li><strong>方向転換</strong><span>マウスを左右に動かして選手と視点を旋回</span></li><li><strong>移動</strong><span>視点に対して W＝前、A＝左、S＝後ろ、D＝右。矢印キー・左スティックでも移動</span></li><li><strong>パス・プレス</strong><span>左クリック / J / パスボタン。味方が持つとパス要求。守備は短押しで正面の水色の範囲にタックル。長押しするとレーダーの黄色い輪の相手へ寄せます。移動操作で片側を塞ぐと、水色の弧が出た味方が逆側から挟むか、パスを狙います。</span></li><li><strong>シュート</strong><span>右クリック / K・Space / シュートボタン。押して力をため、離して蹴る。0.3秒を過ぎると徐々に足が遅くなり、最大までためるとダッシュ中でも通常移動の約半分の速さになります。右クリックでためている間はマウス感度が60%になります。ゴールの上の▼が狙っている横位置です。水色は枠内、オレンジは枠外です。</span></li><li><strong>ダッシュ</strong><span>Shiftを押しながら移動 /「走る」で切替。満タンから2秒。終了から0.3秒後に回復開始。使い切った場合は5.7秒で満タン</span></li><li><strong>ポーズ</strong><span>Escでマウス操作を解除して一時停止 / 一時停止ボタン</span></li></ul>';action.textContent=modeBefore==="play"?"試合に戻る":"閉じる";}
+    if(kind==="help"){title.textContent="操作ガイド";body.innerHTML='<p><b>1–2–1の布陣</b><br>背番号10のあなたはFW。7番は左MF、8番は右MF、4番は後方のDF、1番はGKです。</p><p>水色のリングはパス先の味方。味方に預けたら、DFの背後へ斜めに走ろう。先に届くコースが開くと、味方がスルーパスを出します。</p><p>DFの足元の黄色い矢印が踏み込みの合図。左右の短い線は足が届く幅の目安です。外側のコースを取り続けるか、斜めにダッシュして抜けよう。抜いた後も、DFはボール側の肩まで追ってきます。並ばれる前にシュートやパスを。</p><ul class="guide-list"><li><strong>方向転換</strong><span>マウスを左右に動かして選手と視点を旋回</span></li><li><strong>移動</strong><span>視点に対して W＝前、A＝左、S＝後ろ、D＝右。矢印キー・左スティックでも移動</span></li><li><strong>パス・プレス</strong><span>左クリック / J / パスボタン。自分が持つと、短押しで味方へパス。0.2秒長押しすると足元に黄色い矢印が出ます。PCはマウスを左右に、スマホは押した指を蹴りたい方向へ滑らせ、離すとその方向へグラウンダーを出します。味方が走るコースでは強さを自動調整。FWが片側で前を向いてDFを引きつけたら、逆のMFの斜めの走りを狙おう。味方が持つとパス要求。守備は短押しで正面の水色の範囲にタックル。長押しするとレーダーの黄色い輪の相手へ寄せます。移動操作で片側を塞ぐと、水色の弧が出た味方が逆側から挟むか、パスを狙います。</span></li><li><strong>シュート</strong><span>右クリック / K・Space / シュートボタン。押して力をため、離して蹴る。0.3秒を過ぎると徐々に足が遅くなり、最大までためるとダッシュ中でも通常移動の約半分の速さになります。右クリックでためている間はマウス感度が60%になります。ゴールの上の▼が狙っている横位置です。水色は枠内、オレンジは枠外です。</span></li><li><strong>ダッシュ</strong><span>Shiftを押しながら移動 /「走る」で切替。満タンから2秒。終了から0.3秒後に回復開始。使い切った場合は5.7秒で満タン</span></li><li><strong>ポーズ</strong><span>Escでマウス操作を解除して一時停止 / 一時停止ボタン</span></li></ul>';action.textContent=modeBefore==="play"?"試合に戻る":"閉じる";}
     else if(kind==="pause"){title.textContent="TIME OUT";body.innerHTML="<p>試合を一時停止しています。</p>";action.textContent="▶　試合を再開";}
     else{title.textContent="FULL TIME";const [a,b]=match.score,s=match.stats;body.innerHTML='<p>'+ (a>b?"COAST FC の勝利！":a<b?"SOL FC の勝利":"引き分け")+'</p><div class="result-score">CST　'+a+' – '+b+'　SOL</div><div class="stats"><div><b>'+s.goals+'</b><span>個人ゴール</span></div><div><b>'+s.assists+'</b><span>アシスト</span></div><div><b>'+s.shots+'</b><span>シュート</span></div><div><b>'+s.passes+'</b><span>成功パス</span></div></div>';action.textContent="▶　もう一度プレイ";}
     dirty=true;action.focus({preventScroll:true});}
@@ -1271,12 +1333,13 @@ class Match{
   function turnView(delta){
     if(!delta||match.mode!=="play"||match.freeze>0)return;
     touchCamera=false;lastMouseTurn=age;
-    if(aimingWithMouse())delta*=.6;
+    if(aimingWithMouse()||match.passInput?.aiming)delta*=.6;
     cam.a=Math.atan2(Math.sin(cam.a+delta),Math.cos(cam.a+delta));
     faceView();
   }
-  function startAction(source){if(!touchCamera)faceView();const own=match.ball.owner===0;match.beginAction(source,performance.now()/1000);if(own&&match.ball.owner===null)tone(125,.085,"triangle",.13,0,42);}
-  function finishAction(source){match.endAction(source,performance.now()/1000);}
+  function passYaw(){return cam.a+(touchPass&&match.passInput?.source===touchPass.id?touchPass.angle:0);}
+  function startAction(source){if(!touchCamera)faceView();match.beginAction(source,performance.now()/1000);}
+  function finishAction(source){if(match.endAction(source,performance.now()/1000,passYaw()))tone(125,.085,"triangle",.13,0,42);}
   function startShot(source){
     if(match.charge!==null)return;
     match.startShot();if(match.charge!==null)shotSource=source;
@@ -1299,7 +1362,7 @@ class Match{
     if(e.pointerType!=="mouse"){e.preventDefault();return;}
     if(e.button===2&&!document.pointerLockElement&&match.mode==="play")world.setPointerCapture(e.pointerId);
   });
-  world.addEventListener("pointercancel",()=>{cancelShot("mouse");match.cancelPress("mouse");});
+  world.addEventListener("pointercancel",()=>{cancelShot("mouse");match.cancelAction("mouse");});
   world.addEventListener("mouseleave",()=>{edgeTurn=0;});
   document.addEventListener("mousemove",e=>{
     const locked=document.pointerLockElement===world;
@@ -1325,9 +1388,26 @@ class Match{
   const stick=$("stick");function updateStick(e){let r=stick.getBoundingClientRect(),x=(e.clientX-r.left-r.width/2)/(r.width*.36),y=(e.clientY-r.top-r.height/2)/(r.height*.36),d=Math.max(1,Math.hypot(x,y));joystick.x=x/d;joystick.z=-y/d;stick.firstElementChild.style.transform="translate("+joystick.x*r.width*.27+"px,"+(-joystick.z*r.width*.27)+"px)";}
   stick.onpointerdown=e=>{if(joystick.id!==null)return;e.preventDefault();touchCamera=true;edgeTurn=0;stickBasis=cam.a;joystick.id=e.pointerId;stick.setPointerCapture(e.pointerId);updateStick(e);};stick.onpointermove=e=>{if(joystick.id===e.pointerId)updateStick(e);};stick.onlostpointercapture=()=>{joystick.id=null;joystick.x=joystick.z=0;stick.firstElementChild.style.transform="";};
   $("run").onclick=()=>{runToggle=!runToggle;$("run").setAttribute("aria-pressed",String(runToggle));};
-  $("pass").onpointerdown=e=>{e.preventDefault();touchCamera=true;edgeTurn=0;e.currentTarget.setPointerCapture(e.pointerId);startAction(e.pointerId);};
-  $("pass").onpointerup=e=>finishAction(e.pointerId);
-  $("pass").onpointercancel=$("pass").onlostpointercapture=e=>match.cancelPress(e.pointerId);
+  const passButton=$("pass");
+  passButton.onpointerdown=e=>{
+    e.preventDefault();if(touchPass)return;
+    touchCamera=true;edgeTurn=0;passButton.setPointerCapture(e.pointerId);startAction(e.pointerId);
+    touchPass={id:e.pointerId,x:e.clientX,y:e.clientY,angle:0};
+  };
+  function dragPass(e){
+    if(touchPass?.id!==e.pointerId||match.passInput?.source!==e.pointerId)return;
+    const dx=e.clientX-touchPass.x,dy=e.clientY-touchPass.y;
+    if(Math.hypot(dx,dy)>=7)touchPass.angle=Math.atan2(dx,-dy);
+  }
+  passButton.onpointermove=dragPass;
+  passButton.onpointerup=e=>{
+    if(touchPass?.id!==e.pointerId)return;
+    dragPass(e);finishAction(e.pointerId);touchPass=null;
+  };
+  passButton.onpointercancel=passButton.onlostpointercapture=e=>{
+    if(touchPass?.id===e.pointerId)touchPass=null;
+    match.cancelAction(e.pointerId);
+  };
   $("shoot").onpointerdown=e=>{e.preventDefault();touchCamera=true;edgeTurn=0;e.currentTarget.setPointerCapture(e.pointerId);startShot(e.pointerId);};
   $("shoot").onpointerup=e=>finishShot(e.pointerId);$("shoot").onlostpointercapture=e=>cancelShot(e.pointerId);
   arena.addEventListener("contextmenu",e=>e.preventDefault());window.addEventListener("resize",()=>{dirty=true;});
@@ -1357,6 +1437,10 @@ class Match{
     pen.clearRect(0,0,w,h);pen.strokeStyle="#dce9d48a";pen.lineWidth=1.6;pen.strokeRect(13,11,w-26,h-22);pen.beginPath();pen.moveTo(w/2,11);pen.lineTo(w/2,h-11);pen.stroke();pen.beginPath();pen.ellipse(w/2,h/2,19.2,17.5,0,0,TAU);pen.stroke();
     for(const dir of [-1,1]){const gx=dir===1?w-13:13;pen.strokeRect(gx,py(-9.4),-dir*33,py(9.4)-py(-9.4));}
     for(const p of match.players){pen.beginPath();pen.arc(px(p.z),py(p.x),p.id===0?6.4:4.7,0,TAU);pen.fillStyle=p.team?"#ff9565":"#62e8cb";pen.fill();if(p.id===0){pen.strokeStyle="#fff";pen.lineWidth=2;pen.stroke();}}
+    if(match.passInput?.aiming){
+      const yaw=passYaw();pen.beginPath();pen.moveTo(px(b.z),py(b.x));
+      pen.lineTo(px(b.z+4*Math.cos(yaw)),py(b.x+4*Math.sin(yaw)));pen.strokeStyle="#ffdc75";pen.lineWidth=2.5;pen.stroke();
+    }
     const mark=match.pressTarget();
     if(mark){pen.beginPath();pen.arc(px(mark.z),py(mark.x),7.5,0,TAU);pen.strokeStyle="#ffe4a0";pen.lineWidth=2;pen.stroke();}
     pen.beginPath();pen.arc(px(b.z),py(b.x),3.3,0,TAU);pen.fillStyle="#fffbe0";pen.fill();}
@@ -1365,7 +1449,14 @@ class Match{
     const seconds=Math.ceil(match.time);$("clock").textContent=String(Math.floor(seconds/60)).padStart(2,"0")+":"+String(seconds%60).padStart(2,"0");$("home-score").textContent=match.score[0];$("away-score").textContent=match.score[1];$("energy").style.width=(match.stamina*100)+"%";$("energy").classList.toggle("recovering",match.hero.winded);$("run").textContent=match.hero.winded?"回復中":"走る";
     $("power").style.display=match.charge!==null?"block":"none";if(match.charge!==null)$("power").querySelector("i").style.width=Math.max(5,match.charge*100)+"%";
     $("pass").classList.toggle("containing",match.hero.stance==="contain");
-    $("pass").textContent=match.ball.owner===0?"パス":match.ball.owner!==null&&match.players[match.ball.owner].team===0?"要求":match.hero.stance==="contain"?"寄せ中":"プレス";if(age>noticeEnd&&notice.textContent)notice.textContent="";}
+    $("pass").textContent=match.passInput?.aiming?"スルー":match.ball.owner===0?"パス":match.ball.owner!==null&&match.players[match.ball.owner].team===0?"要求":match.hero.stance==="contain"?"寄せ中":"プレス";if(age>noticeEnd&&notice.textContent)notice.textContent="";}
+  function drawPassAim(){
+    const b=match.ball;
+    actors.at(b.x,.07,b.z,passYaw(),()=>{
+      actors.quad([-.11,0,.55],[.11,0,.55],[.11,0,2.45],[-.11,0,2.45],"#ffdc75");
+      actors.tri([-.39,0,2.38],[.39,0,2.38],[0,0,3.35],"#ffdc75");
+    });
+  }
   function drawShotAim(){
     const forward=Math.cos(cam.a),ball=match.ball;
     if(forward<=0||ball.z>=END)return;
@@ -1380,10 +1471,11 @@ class Match{
   }
   function draw(){
     actors.data.length=0;
-    const target=match.ball.owner===0?match.target(match.hero,true)?.id:match.ball.receiver;
+    const target=match.ball.owner===0?(match.passInput?.aiming?null:match.target(match.hero,true)?.id):match.ball.receiver;
     for(const p of match.players)drawAthlete(actors,p,age,match.mode==="play"&&p.team===0&&p.id!==0&&p.id===target);
     if(match.turf)drawTurf(actors,match.turf);
     drawBall(actors,match.ball);
+    if(match.mode==="play"&&match.passInput?.aiming)drawPassAim();
     if(match.mode==="play"&&aimingWithMouse())drawShotAim();
     renderer.render(cam,stadium,actors);drawRadar();hud();
   }
