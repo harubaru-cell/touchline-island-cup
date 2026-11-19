@@ -624,9 +624,15 @@ function defend(match,team,carrier,free){
   if(pressing)presser=match.hero;
   const side=match.sides[team],df=side[3],striker=match.sides[1-team][0];
   const holder=free?(ball.kind==="pass"&&ball.flight<2.6?match.players[ball.receiver]:null):carrier;
+  const tracking=match.markedStriker===striker.id;
+  const origin=free?{x:ball.meetX,z:ball.meetZ}:carrier;
+  const recoveryLead=(df.z-striker.z)*dir>0?.45:0;
+  const strikerDepth=END+striker.z*dir+Math.min(0,striker.vz*dir)*recoveryLead;
   let guardStriker=false,pressPoint=front;
-  if(holder&&!holder.keeper&&holder!==striker&&Math.abs(striker.x)<8&&END+striker.z*dir<13&&
-     END+holder.z*dir<19&&(striker.z-holder.z)*dir<1.5){
+  // Allow a marked striker to check short or drift wide without immediately losing the marker.
+  if(holder&&!holder.keeper&&holder!==striker&&Math.abs(striker.x)<(tracking?11:8.5)&&
+     strikerDepth<(tracking?18:15)&&gap(origin,striker)<(tracking?26:23)&&
+     (striker.z-origin.z)*dir<(tracking?5:2.5)){
     const point=free?{x:ball.meetX,z:ball.meetZ}:target;
     const arrival=p=>{
       if(!free&&p.tackle?.owner===holder.id&&p.tackle.age<SWEEP_END&&gap(p,holder)<2.7)return 0;
@@ -634,16 +640,20 @@ function defend(match,team,carrier,free){
     };
     const wing=arrival(side[1])<=arrival(side[2])?side[1]:side[2],eta=arrival(wing);
     const range=Math.hypot(holder.x,holder.z-ownGoal);
-    const shotReady=!free&&range<14.5&&Math.abs(holder.x)<8.3&&(range<9||holder.hold>.32)&&
-      [-2.65,2.65].some(x=>laneSpace(holder,{x,z:ownGoal},defenders)>.85);
-    if(shotReady&&eta>.35&&arrival(df)<eta){
-      if(!pressing||gap(match.hero,holder)>2)presser=df;
-    }else if(eta<.9){
-      if(!pressing)presser=wing;
+    const goalFacing=(-holder.x*Math.sin(holder.facing)+(ownGoal-holder.z)*Math.cos(holder.facing))/(range||1);
+    // If the centre back is the only player blocking a shot, stepping away would open it.
+    const shotReady=!free&&range<14.5&&Math.abs(holder.x)<8.3&&(range<7||goalFacing>.25&&(range<9||holder.hold>.32))&&
+      [-2.65,2.65].some(x=>laneSpace(holder,{x,z:ownGoal},defenders.filter(p=>p!==df))>.85);
+    const heroClose=pressing&&gap(match.hero,holder)<=2;
+    if(shotReady&&!heroClose&&eta>.35&&arrival(df)<eta){
+      presser=df;
+    }else{
+      if(!pressing&&(presser===df||eta<.9))presser=wing;
       guardStriker=true;
       if(free)pressPoint=point;
     }
   }
+  match.markedStriker=guardStriker?striker.id:null;
   const playerPress=pressing&&presser===match.hero;
   const pressDistance=gap(pressPoint,presser);
   setRun(presser,"press",pressPoint.x,pressPoint.z,pressDistance<10&&(Math.hypot(danger.vx,danger.vz)>4.4||danger.z*dir<-11));
@@ -776,7 +786,7 @@ class Match{
     for(const p of this.players){p.tackle=null;p.touchSide=p.id===0?.385:.23;}
     this.clearDefense();this.ball.kind="restart";this.claim(this.players[team*5]);this.hero.facing=0;this.charge=null;this.pressLock=0;this.callUntil=0;this.attach();}
   clearDefense(){
-    this.cancelPress();this.pressUntil=0;this.hero.poke=null;this.turf=null;this.strikerPass=null;
+    this.cancelPress();this.pressUntil=0;this.hero.poke=null;this.turf=null;this.strikerPass=null;this.markedStriker=null;
   }
   claim(p){
     const b=this.ball,last=this.players[b.last];
@@ -784,6 +794,7 @@ class Match{
       ((p.role==="trap"&&b.owner!==null&&pressingCarrier(this,last))||
        (p.role==="screen"&&b.owner===null&&b.pressedPass&&b.kind==="pass"));
     const received=b.owner===null&&b.kind==="pass"&&last!==p&&last.team===p.team;
+    if(last.team!==p.team||this.markedStriker===p.id)this.markedStriker=null;
     if(!received||b.buildUpWing!==p.id)b.buildUpWing=null;
     if(!received||this.strikerPass?.runner!==p.id)this.strikerPass=null;
     if(p.team===0){this.cancelPress();this.pressUntil=0;}
@@ -852,6 +863,7 @@ class Match{
   }
   kick(p,x,z,speed,loft,kind){const b=this.ball,dx=x-b.x,dz=z-b.z,n=Math.hypot(dx,dz)||1;
     this.strikerPass=null;
+    if(kind!=="pass")this.markedStriker=null;
     b.pressedPass=kind==="pass"&&pressingCarrier(this,p);b.buildUpWing=null;
     Object.assign(b,{owner:null,last:p.id,vx:dx/n*speed,vz:dz/n*speed,vy:loft,y:.07,lock:.10,kind,receiver:null,flight:0});p.cool=kind==="shot"?.46:.37;p.kick=1;p.facing=Math.atan2(dx,dz);this.nextPlan=0;}
   target(p,human){let best=null,value=-Infinity,dir=p.team===0?1:-1;
